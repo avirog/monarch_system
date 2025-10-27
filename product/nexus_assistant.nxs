@@ -87,7 +87,7 @@ purpose:
     - Written in Nexus language focusing on WHY features exist
 
 properties:
-    systemDesigns is @SystemDesignView, collection of system designs that realize this product view
+    systemDesigns is @SystemDesignView, collection of system designs that realize this product AIAgent
 
 entity: SystemDesignView
 role: component

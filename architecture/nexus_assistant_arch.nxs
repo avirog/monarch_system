@@ -98,6 +98,8 @@ actions:
     getEntity: Returns entity by name
     getRelations: Returns all relations for an entity, optionally filtered by relation type
     findPath: Discovers paths between two entities
+    getEntities: Returns all entities
+    getAllRelations: Returns all relations
 
 entity: QueryProcessor
 role: component
@@ -148,7 +150,7 @@ properties:
     strictMode is Boolean, enforce all rules strictly, default true
 actions:
     validateEntity: Checks entity definition correctness
-    validateReferences: Ensures all @EntityName references exist
+    validateReferences: Ensures all referenced entities exist
     validateRelations: Verifies relation constraints are met
     reportViolations: Returns collection of validation errors
 
@@ -159,7 +161,7 @@ Developer modifies a .nxs file.
 @KnowledgeGraph updates affected entities and relations to reflect the changes.
 
 scenario: QueryingSpecifications
-AI coding assistant queries @NexusAssistant through @APIGateway.
+AI coding assistant queries @NexusAssistantService through @APIGateway.
 @QueryProcessor searches @KnowledgeGraph for relevant entities and relationships, then returns results as structured JSON.
 
 scenario: SystemInitialization
