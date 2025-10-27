@@ -1,0 +1,169 @@
+catalog: NexusAssistantArchitecture
+
+entity: NexusAssistantService
+role: platform
+purpose:
+    - Single deployable service providing specification parsing and querying
+    - Contains @NexusParser, @ValidationEngine, @SpecificationStore, @KnowledgeGraph, @QueryProcessor, and @APIGateway
+    - Exposes REST API via @APIGateway
+properties:
+    CloudService as deploymentModel
+    Python as runtimeEnvironment 
+    
+
+entity: ParsedSpecification
+role: struct
+purpose:
+    - Structured representation of a parsed Nexus specification file
+    - Output from @NexusParser containing all elements of a .nxs file
+properties:
+    catalogName is String, name declared in catalog statement
+    filePath is String, source file path
+    imports is collection of @ImportItem, imported module declarations
+    entities is collection of @EntityDefinition, parsed entity definitions
+    rules is collection of @NamedBlock, business rules with type rule
+    scenarios is collection of @NamedBlock, scenarios with type scenario
+    relations is collection of @NamedBlock, explicit relations with type explicit
+    parseTimestamp is Number, when file was parsed in unix timestamp
+    specificationHash is String, content hash for change detection
+
+entity: EntityDefinition
+role: struct
+purpose:
+    - Represents a parsed entity from Nexus specification
+    - Contains all entity metadata including role, purpose, properties, and actions
+properties:
+    entityName is String, entity identifier
+    catalog to which entity belongs
+    role is String, entity role (platform, module, component, service, actor, struct, etc)
+    purposes is collection of @NamedBlock, entity purposes with type purpose
+    properties is collection of @NamedBlock, entity properties with type property
+    actions is collection of @NamedBlock, entity actions with type action
+
+entity: Statement
+role: struct
+purpose:
+    - Atomic unit of text that may reference entities
+properties:
+    text is String, the actual text content
+    references is collection of String, referenced entity names including properties and actions (e.g., entity.property)
+
+entity: NamedBlock
+role: struct
+purpose:
+    - Named container for one or more statements
+    - Used for purposes, properties, actions, rules, scenarios, and explicit relations
+properties:
+    name is String, identifier for the block
+    relationType is one of {purpose, property, action, rule, scenario, explicit}, what kind of block this is
+    statements is collection of @Statement, the content
+
+entity: Relation
+role: struct
+purpose:
+    - Represents a typed relationship between entities in @KnowledgeGraph
+    - Can involve multiple entities without implied directionality
+    - Derived from @NamedBlock references during parsing
+properties:
+    entities is collection of String, entity names participating in this relation
+    relationType is one of {purpose, property, action, rule, scenario, explicit}, how the entities are related
+    sourceBlock is @NamedBlock, the block that created this relation 
+
+entity: NexusParser
+role: component
+purpose:
+    - Parses Nexus language files (.nxs) into @ParsedSpecification structures
+    - Uses @ValidationEngine to ensure syntax and semantic correctness
+    - Populates @KnowledgeGraph with parsed entities, relations, rules, and scenarios
+properties:
+    parserLibrary is Lark, Python parsing library for grammar-based parsing
+actions:
+    parseFile: Reads and parses a .nxs file into @ParsedSpecification
+    validateSyntax: Checks for syntax errors and returns validation results
+
+entity: KnowledgeGraph
+role: module
+purpose:
+    - Central repository maintaining in-memory graph of all parsed specification elements
+    - Stores entities and typed relations between them (purpose, property, action, rule, scenario, explicit)
+    - Maintains three-layer model: product views, system design views, and component implementations
+    - Allows @QueryProcessor to perform fast lookups and traversals
+properties:
+    indexingStrategy is InMemory
+    enableCrossFileLinks is Boolean, whether to link entities across different specification files, default true
+    threeLayerModel is Boolean, maintains ProductView, SystemDesignView, and ComponentImplementation separation, default true
+actions:
+    addEntity: Inserts entity node with its properties and actions into graph
+    addRelation: Creates typed edge between entity nodes with relation type (purpose, property, action, rule, scenario, explicit)
+    getEntity: Returns entity by name
+    getRelations: Returns all relations for an entity, optionally filtered by relation type
+    findPath: Discovers paths between two entities
+
+entity: QueryProcessor
+role: component
+purpose:
+    - Interprets developer and AI agent queries
+    - Searches @KnowledgeGraph for relevant entities and relationships
+    - Returns query results as JSON
+properties:
+    queryLanguage is one of {Natural, Structured}
+    maxResults is Number, maximum results to return, default 10
+actions:
+    parseQuery: Extracts intent and entities from user query
+    determineScope: Identifies which specification layers to search
+    executeQuery: Queries @KnowledgeGraph and returns results
+
+entity: SpecificationStore
+role: platform
+purpose:
+    - Reads Nexus specification files from filesystem
+    - Watches for file changes and triggers @NexusParser to re-parse modified files
+properties:
+    storageType is FileSystem
+    watchForChanges is Boolean, default true
+actions:
+    loadSpecification: Reads specification from filesystem
+    watchFile: Monitors file for changes
+    listSpecifications: Returns all available specifications
+
+entity: APIGateway
+role: component
+purpose:
+    - Exposes REST API for external integrations
+    - Routes requests to @QueryProcessor
+properties:
+    authenticationRequired is Boolean, default false
+actions:
+    handleRequest: Processes incoming API request
+    routeToService: Forwards to @QueryProcessor
+    formatResponse: Standardizes JSON responses
+
+entity: ValidationEngine
+role: component
+purpose:
+    - Validates specifications against Nexus language rules
+    - Ensures referenced entities exist
+    - Checks relation cardinality constraints
+properties:
+    strictMode is Boolean, enforce all rules strictly, default true
+actions:
+    validateEntity: Checks entity definition correctness
+    validateReferences: Ensures all @EntityName references exist
+    validateRelations: Verifies relation constraints are met
+    reportViolations: Returns collection of validation errors
+
+
+scenario: SpecificationUpdate
+Developer modifies a .nxs file. 
+@SpecificationStore detects the change and triggers @NexusParser to re-parse the file.
+@KnowledgeGraph updates affected entities and relations to reflect the changes.
+
+scenario: QueryingSpecifications
+AI coding assistant queries @NexusAssistant through @APIGateway.
+@QueryProcessor searches @KnowledgeGraph for relevant entities and relationships, then returns results as structured JSON.
+
+scenario: SystemInitialization
+On startup, @SpecificationStore loads all .nxs files from configured directories.
+@NexusParser parses each file in parallel. 
+@KnowledgeGraph builds the complete entity relationship graph with three-layer model. 
+@APIGateway becomes ready to serve requests.

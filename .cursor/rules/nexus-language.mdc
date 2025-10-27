@@ -1,0 +1,209 @@
+---
+globs: *.nxs
+alwaysApply: false
+---
+# Nexus Language Rules for Cursor
+
+## Language Overview
+Nexus is a domain-specific language for programming systems from two perspectives:
+- **Product Managers** program WHAT the system should do and WHY (product entities and requirements)
+- **Software Architects/Engineers** program HOW the system works (design entities and implementation)
+
+The language combines structured syntax with free-text descriptions. Each perspective uses the same language but defines different entities:
+- Product entities describe features, user interactions (how users engage with the product), and business concepts visible to product
+- Engineering entities describe technical components, modules, and infrastructure that may be invisible to product
+- These perspectives can coexist in the same file or be maintained separately
+
+## File Structure
+- Files should have `.nxs` extension
+- Start with catalog declaration
+- Follow with entity definitions, rules, and scenarios
+
+## Syntax Rules
+
+### 1. Preamble (Required)
+```nexus
+catalog: CatalogName
+
+imports:
+    com.example.Module1
+    com.example.Module2 as Alias
+```
+
+### 2. Entity Definition
+```nexus
+entity: EntityName
+role: platform|language|actor|module|component|service
+purpose:
+    - Single line purpose statement
+    - Multi-line purpose with bullet points
+
+properties:
+    propertyName is TypeName, description, default value
+    propertyName may be TypeName
+    propertyName is one of {Option1, Option2, Option3}
+
+actions:
+    actionName: Description of what this action does
+    anotherAction: Another action description
+```
+
+### 3. Rules
+```nexus
+rule: RuleName
+Description of the business rule or constraint
+```
+
+### 4. Scenarios
+```nexus
+scenario: ScenarioName
+Free-form description of the scenario.
+Can use Given/When/Then/And format, or when-case, or any narrative style.
+```
+
+## Key Syntax Elements
+
+### Entity References
+The language supports multiple types of references using the `@` prefix:
+
+1. **Direct entity reference**: `@EntityName`
+   - References an entity in the current catalog
+   
+2. **Catalog-qualified reference**: `@catalog.entity`
+   - References an entity from an imported catalog
+   
+3. **Property/Action reference**: `@entity.property/@entity.action`
+   - References a specific property of an entity
+   
+**Usage notes:**
+- References can appear in any free text: purpose statements, property descriptions, action descriptions, rules, scenarios, etc.
+- Referenced entities don't need to be defined in order
+- Use catalog-qualified references for imported entities
+
+
+### Property Types
+- Basic types: `String`, `Number`, `Boolean`
+- Custom types: `CNAME` (alphanumeric identifiers)
+- Set literals: `{Option1, Option2, Option3}`
+- Values: `true`, `false`, `unknown`, `CNAME`, `SIGNED_NUMBER`
+- Entity Types: `@EntityName`
+
+
+## Programming Perspectives
+
+### Product Manager Perspective (WHAT/WHY)
+Product managers define **product entities** - things visible and relevant to product:
+- **Entities**: User-facing features, capabilities, business concepts, user journeys
+- **Purpose statements**: Describe what the entity does and why it exists from user/business perspective
+- **Scenarios**: Define user stories and expected behaviors
+- **Rules**: Capture business logic and product constraints
+- **Entity roles**: Typically `actor`, `service` or any other from user perspective
+- Free-text descriptions explain the "why" behind product decisions
+
+Example (product specification):
+```nexus
+catalog: CheckoutProduct
+
+entity: PaymentFlow
+role: service
+purpose:
+    - Enables @Customer to complete purchases quickly
+    - Supports multiple payment methods to maximize conversion
+    - Provides clear feedback and error recovery for failed payments
+
+entity: Customer
+role: actor
+purpose: User who purchases products through the platform
+
+scenario: SuccessfulPurchase
+@Customer completes checkout and has valid payment credentials
+Then payment is processed within 3 seconds and returns immediate confirmation
+```
+
+### Software Architect/Engineer Perspective (HOW)
+Engineers define **design entities** - technical components of the implementation:
+- **Entities**: Services, modules, components, databases, APIs, infrastructure
+- **Properties**: Data structures, types, constraints, configuration, other entities
+- **Actions**: Operations, interfaces, APIs
+- **Entity roles**: `platform`, `module`, `component`, `service`, `struct`... from technical perspective
+- Free-text descriptions explain technical decisions and patterns
+
+Example (design specification):
+```nexus
+catalog: PaymentSystem
+
+imports:
+    external.PaymentProvider
+    monitoring.MetricsCollector
+
+entity: PaymentGateway
+role: component
+purpose: 
+    - External integration layer for payment processing
+    - Uses @external.PaymentProvider for transaction handling
+    - Reports metrics to @MetricsCollector
+properties:
+    maxRetries is Number, retry attempts for @external.PaymentProvider.process, default 3
+    apiVersion is String, @external.PaymentProvider API version
+    metricsEnabled is Boolean, enables reporting to @MetricsCollector, default true
+actions:
+    authorizePayment: Validates funds using @external.PaymentProvider.validate
+    capturePayment: Completes transaction via @external.PaymentProvider.process
+    handleWebhook: Processes notifications from @external.PaymentProvider.events
+
+entity: PaymentDatabase
+role: module
+purpose: Persists @PaymentGateway transactions and provides audit logs for @MetricsCollector
+properties:
+    gateway is PaymentGateway, reference to @PaymentGateway instance
+actions:
+    logTransaction: Records @PaymentGateway.capturePayment result
+    queryMetrics: Provides data for @MetricsCollector.report
+@
+```
+
+## Best Practices
+
+### 1. Naming Conventions
+- Use PascalCase for entity names: `SystemA`, `UserService`
+- Use camelCase for properties: `userName`, `isActive`
+- Use descriptive names that reflect the domain
+
+### 2. Purpose Statements
+- **Product perspective**: Focus on business value and user impact
+- **Architect perspective**: Focus on technical responsibility and system role
+- Start with action verbs when possible
+- Be specific about what the entity does and why
+- Include context about relationships with other entities
+- Use bullet points for complex purposes with multiple concerns
+
+### 3. Entity References
+- Use simple references `@EntityName` when referring to entities in the same catalog
+- Use catalog-qualified references `@catalog.entity` for imported entities
+- Use member references `@entity.property` or `@entity.action` to refer to specific parts
+- Keep references consistent across the specification
+- Group related entities together
+
+
+## Error Prevention
+- Always include catalog declaration
+- Ensure entity references use @ prefix
+- Use proper indentation for multi-line content
+- End each statement with newline
+- Validate that referenced entities exist
+
+## File Organization
+
+### Recommended Structure
+- **Product specifications**: Separate files defining product entities (e.g., `product-checkout.nxs`)
+- **Engineering specifications**: Separate files defining design entities (e.g., `design-payment-service.nxs`)
+- One file per major domain or feature area
+- Group related entities together within each file
+- Use imports for shared definitions across files
+
+### Key Principles
+- Product and engineering entities are independent - they don't need to match
+- Product may define entities engineering doesn't have (user journeys, business concepts)
+- Engineering may define entities product doesn't see (infrastructure, internal services)
+- Both perspectives use the same Nexus language syntax
+- Files can be separate (recommended) or combined based on team workflow
