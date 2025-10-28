@@ -69,6 +69,9 @@ properties:
     relationType is one of {purpose, property, action, rule, scenario, explicit}, how the entities are related
     sourceBlock is @NamedBlock, the block that created this relation 
 
+rule: RelationReference
+Each @Relation that is derived from @EntityDefinition must contains that entity as one of its references 
+
 entity: NexusParser
 role: component
 purpose:
@@ -85,7 +88,7 @@ entity: KnowledgeGraph
 role: module
 purpose:
     - Central repository maintaining in-memory graph of all parsed specification elements
-    - Stores entities and typed relations between them (purpose, property, action, rule, scenario, explicit)
+    - Stores entities and typed relations (@Relation) between them (purpose, property, action, rule, scenario, explicit)
     - Maintains three-layer model: product views, system design views, and component implementations
     - Allows @QueryProcessor to perform fast lookups and traversals
 properties:
