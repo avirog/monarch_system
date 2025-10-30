@@ -23,7 +23,6 @@ properties:
     entities is collection of @EntityDefinition, parsed entity definitions
     rules is collection of @NamedBlock, business rules with type rule
     scenarios is collection of @NamedBlock, scenarios with type scenario
-    relations is collection of @NamedBlock, explicit relations with type explicit
     parseTimestamp is Number, when file was parsed in unix timestamp
     specificationHash is String, content hash for change detection
 
