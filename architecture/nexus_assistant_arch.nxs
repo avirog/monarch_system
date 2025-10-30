@@ -67,7 +67,7 @@ purpose:
 properties:
     entities is collection of String, entity names participating in this relation
     relationType is one of {purpose, property, action, rule, scenario, explicit}, how the entities are related
-    sourceBlock is @NamedBlock, the block that created this relation 
+    statement is @Statement, the statement that created this relation 
 
 rule: RelationReference
 Each @Relation that is derived from @EntityDefinition must contains that entity as one of its references 
