@@ -117,16 +117,24 @@ entity: QueryProcessor
 role: component
 purpose:
     - Interprets developer and AI agent queries
-    - Searches @KnowledgeGraph for relevant entities and relationships
+    - Searches @KnowledgeGraph for relevant entities and relationships using both exact matching and semantic search
     - Handles traceability queries across specifications and code using @TraceLink objects
+    - Supports natural language queries through embedding-based semantic matching
     - Returns query results as JSON
 properties:
     queryLanguage is one of {Natural, Structured}
     maxResults is Number, maximum results to return, default 10
+    semanticSearchEnabled is Boolean, enables embedding-based semantic search for natural language queries, default true
+    embeddingService is String, OpenAI API for text-embedding-3-small model, shared with @TraceabilityMatcher
+    semanticThreshold is Number, minimum cosine similarity for semantic query matches, default 0.6
+    cache is @EmbeddingCache, shared cache with @TraceabilityMatcher for query embeddings
 actions:
     parseQuery: Extracts intent and entities from user query
     determineScope: Identifies which specification layers to search
     executeQuery: Queries @KnowledgeGraph and returns results
+    semanticSearch: Generates embedding for natural language query and finds semantically similar entities using cosine similarity
+    matchQueryIntent: Analyzes query text to understand whether user wants entities, relationships, layer browsing, or traceability
+    rankResults: Scores and orders results by semantic relevance to query
     traceToCode: Follows @TraceLink objects from specification entity to implementing code
     traceToSpec: Follows @TraceLink objects backward from code to specification requirements
     assessCoverage: Identifies specifications without corresponding code (gaps in implementation)
@@ -383,6 +391,44 @@ Developer modifies payment_service.py file, @SpecificationStore detects change.
 @TraceabilityMatcher recomputes @TraceLink objects for changed entities and updates @KnowledgeGraph.
 Queries immediately reflect updated traceability without full system reindex.
 
+scenario: SemanticNaturalLanguageQuery
+User submits natural language query "What components are responsible for parsing specifications?"
+@QueryProcessor receives query and checks semanticSearchEnabled property.
+@QueryProcessor generates embedding for the query using embeddingService (OpenAI API).
+@EmbeddingCache checks if this exact query was cached, returns cached embedding or generates new.
+@QueryProcessor retrieves all entity embeddings from @KnowledgeGraph (previously indexed by @TraceabilityMatcher).
+@QueryProcessor computes cosine similarity between query embedding and each entity embedding.
+Entities with similarity above semanticThreshold (default 0.6) are collected.
+@QueryProcessor ranks results by similarity score descending.
+Results include @NexusParser, @ValidationEngine, @CodeParser with confidence scores.
+@QueryProcessor returns top maxResults (default 10) as JSON with entity details and relevance scores.
+
+scenario: IntentBasedLayerFiltering
+User queries "Find all entities in the design layer"
+@QueryProcessor calls matchQueryIntent to parse query structure.
+matchQueryIntent identifies keywords "all entities" and "design layer" indicating browse intent with layer filter.
+@QueryProcessor recognizes this as structured query, not requiring semantic search.
+@QueryProcessor calls @KnowledgeGraph getEntities with layer filter "design".
+All 19 design layer entities returned directly without embedding computation.
+Results formatted with entity roles, purposes, and action counts.
+
+scenario: FuzzyConceptMatching
+User asks "What handles file watching?" without knowing exact entity name.
+@QueryProcessor generates embedding for "file watching" concept using embeddingService.
+Query embedding compared against all entity embeddings in @KnowledgeGraph.
+@SpecificationStore entity has high semantic similarity due to watchForChanges property and monitoring purpose.
+Match exceeds semanticThreshold (0.6), ranked highest due to "watches for file changes" in purpose statement.
+@QueryProcessor returns @SpecificationStore with confidence 0.78 showing relevant properties and watchFile action.
+
+scenario: SharedEmbeddingInfrastructure
+@QueryProcessor and @TraceabilityMatcher both initialize with same embeddingService (OpenAI API).
+Both components share single @EmbeddingCache instance configured in @NexusAssistantService.
+@TraceabilityMatcher indexes all specification entities during TraceabilityDiscovery scenario.
+Entity embeddings stored in cache with content hashes as keys.
+When @QueryProcessor performs semantic search, it reuses entity embeddings created by @TraceabilityMatcher.
+No duplicate embedding generation for specification entities - cache provides efficiency.
+Only query embeddings are newly generated per search request.
+
 rule: FunctionLevelGranularity
 @CodeParser must extract individual functions and methods as separate @CodeEntity objects for precise traceability between specification actions and code implementations
 
@@ -409,3 +455,12 @@ All embeddings must use same model (text-embedding-3-small) and dimensions (1536
 
 rule: ValidLayerTransitions
 @TraceabilityMatcher only creates @TraceLink objects for valid layer transitions: product→design, design→implementation, design→code, implementation→code - filters vector store by these rules to prevent invalid transitions like product→code or implementation→design
+
+rule: SemanticSearchThreshold
+@QueryProcessor uses lower similarity threshold (default 0.6) for natural language queries compared to @TraceabilityMatcher (0.7), allowing broader conceptual matches for exploratory search while traceability requires higher confidence
+
+rule: QueryEmbeddingCaching
+@QueryProcessor reuses @EmbeddingCache for both query embeddings and entity embeddings - entity embeddings indexed once by @TraceabilityMatcher, query embeddings cached per unique query text to avoid redundant API calls for repeated questions
+
+rule: SharedEmbeddingService
+@QueryProcessor and @TraceabilityMatcher must share same embeddingService configuration (OpenAI text-embedding-3-small, 1536 dimensions) and @EmbeddingCache instance to ensure vector compatibility and maximize cache efficiency

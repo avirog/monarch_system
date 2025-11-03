@@ -30,6 +30,7 @@ actions:
     manageRequirements: Helps organize, track, and maintain @ProductView for product managers
     manageSystemDesign: Helps organize, track, and maintain @SystemDesignView for developers
     validateFeatureReadiness: Checks if new feature specifications are complete and ready for design and implementation
+    searchSpecifications: Understands natural language questions and finds relevant specifications, entities, and relationships semantically without requiring exact names
 
 entity: ProductManager
 role: actor
@@ -93,7 +94,7 @@ purpose:
     - Written in Nexus language focusing on WHY features exist
 
 properties:
-    systemDesigns is @SystemDesignView, collection of system designs that realize this product AIAgent
+    systemDesigns is @SystemDesignView, collection of system designs that realize this product
 
 entity: SystemDesignView
 role: component
@@ -193,6 +194,38 @@ Then the assistant identifies which requirements might be affected
 And shows which other code depends on the changes
 And warns about risks to product features
 
+scenario: ExploratoryNaturalLanguageSearch
+Given a developer or product manager unfamiliar with the system
+When they ask "What components are responsible for parsing specifications?"
+Then @NexusAssistant understands the semantic intent without requiring exact entity names
+And searches specifications using meaning and context, not exact text matching
+And returns relevant components that handle specification parsing
+And explains how these components work together to accomplish parsing
+
+scenario: SemanticLayerDiscovery
+Given an @AIAgent exploring the system architecture
+When it asks "How does the system expose functionality to AI agents?"
+Then @NexusAssistant interprets the question semantically
+And identifies design entities related to API exposure and agent integration
+And returns components that handle external agent access and their relationships
+And provides context about how these components enable integration
+
+scenario: IntentBasedEntitySearch
+Given a user asking about capabilities without knowing exact terminology
+When they query "Find all entities in the design layer"
+Then @NexusAssistant understands they want to browse entities by layer
+And retrieves all design-layer entities from the knowledge graph
+And presents them with their roles, purposes, and key relationships
+And enables further exploration of discovered entities
+
+scenario: FuzzyConceptMatching
+Given a query with approximate or alternative terminology
+When user asks "What handles file watching?"
+Then @NexusAssistant matches concepts like "file watching" to related entities
+And finds the component that monitors file changes
+And explains the entity's purpose and file watching capability
+And shows scenarios demonstrating the file watching behavior
+
 rule: ContextualAccuracy
 @NexusAssistant must only provide implementation guidance that is consistent with both product requirements and architectural constraints
 
@@ -225,3 +258,6 @@ When code or specifications change, @NexusAssistant must identify and communicat
 
 rule: RelationalImpactAnalysis
 @NexusAssistant must identify and present all related entities that may be affected by changes or whose relations are important to consider in any context, including implementation, design decisions, product changes, or understanding existing features
+
+rule: SemanticSearchCapability
+@NexusAssistant must support natural language queries that don't require exact entity names - searches must understand user intent, match concepts semantically, and return relevant results based on meaning rather than text matching alone
