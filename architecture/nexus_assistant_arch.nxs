@@ -4,8 +4,9 @@ entity: NexusAssistantService
 role: platform
 purpose:
     - Single deployable service providing specification parsing and querying
-    - Contains @NexusParser, @ValidationEngine, @SpecificationStore, @KnowledgeGraph, @QueryProcessor, and @APIGateway
-    - Exposes REST API via @APIGateway
+    - Contains @NexusParser, @ValidationEngine, @SpecificationStore, @KnowledgeGraph, @QueryProcessor, @APIGateway, @MCPServer, @CodeParser, and @TraceabilityMatcher
+    - Exposes REST API via @APIGateway and MCP protocol via @MCPServer
+    - Discovers implicit traceability between specifications and source code using semantic analysis
 properties:
     CloudService as deploymentModel
     Python as runtimeEnvironment 
@@ -89,25 +90,35 @@ purpose:
     - Central repository maintaining in-memory graph of all parsed specification elements
     - Stores entities and typed relations (@Relation) between them (purpose, property, action, rule, scenario, explicit)
     - Maintains three-layer model: product views, system design views, and component implementations
-    - Allows @QueryProcessor to perform fast lookups and traversals
+    - Stores @CodeEntity objects and @TraceLink objects for code traceability
+    - Allows @QueryProcessor to perform fast lookups and traversals across specifications and code
 properties:
     indexingStrategy is InMemory
     enableCrossFileLinks is Boolean, whether to link entities across different specification files, default true
     threeLayerModel is Boolean, maintains ProductView, SystemDesignView, and ComponentImplementation separation, default true
+    codeEntities is collection of @CodeEntity, parsed code elements indexed by qualified name
+    traceLinks is collection of @TraceLink, discovered semantic relationships between specs and code
 actions:
     addEntity: Inserts entity node with its properties and actions into graph
     addRelation: Creates typed edge between entity nodes with relation type (purpose, property, action, rule, scenario, explicit)
+    addCodeEntity: Inserts @CodeEntity from parsed source code
+    addTraceLink: Stores @TraceLink discovered by @TraceabilityMatcher
     getEntity: Returns entity by name
+    getCodeEntity: Returns @CodeEntity by qualified name
     getRelations: Returns all relations for an entity, optionally filtered by relation type
-    findPath: Discovers paths between two entities
+    getTraceLinks: Returns @TraceLink objects for an entity (forward to next layer or backward to previous layer)
+    traceChain: Follows multiple @TraceLink objects across layers to trace from any layer to any other layer
+    findPath: Discovers paths between two entities through design layer
     getEntities: Returns all entities
     getAllRelations: Returns all relations
+    removeCodeEntitiesFromFile: Removes all code entities from a specific file (for reindexing)
 
 entity: QueryProcessor
 role: component
 purpose:
     - Interprets developer and AI agent queries
     - Searches @KnowledgeGraph for relevant entities and relationships
+    - Handles traceability queries across specifications and code using @TraceLink objects
     - Returns query results as JSON
 properties:
     queryLanguage is one of {Natural, Structured}
@@ -116,6 +127,9 @@ actions:
     parseQuery: Extracts intent and entities from user query
     determineScope: Identifies which specification layers to search
     executeQuery: Queries @KnowledgeGraph and returns results
+    traceToCode: Follows @TraceLink objects from specification entity to implementing code
+    traceToSpec: Follows @TraceLink objects backward from code to specification requirements
+    assessCoverage: Identifies specifications without corresponding code (gaps in implementation)
 
 entity: SpecificationStore
 role: platform
@@ -142,6 +156,21 @@ actions:
     routeToService: Forwards to @QueryProcessor
     formatResponse: Standardizes JSON responses
 
+entity: MCPServer
+role: component
+purpose:
+    - Implements Model Context Protocol server for AI agent integration
+    - Exposes @QueryProcessor capabilities through MCP protocol
+    - Enables both internal and external AI agents to query specifications
+properties:
+    protocolVersion is String, MCP protocol version supported, default 1.0
+    transportType is one of {stdio, http}, communication transport mechanism, default stdio
+    toolsEnabled is Boolean, whether to expose MCP tools, default true
+actions:
+    handleMCPRequest: Processes incoming MCP protocol request
+    exposeTool: Registers @QueryProcessor operations as MCP tools
+    formatMCPResponse: Serializes results in MCP protocol format
+
 entity: ValidationEngine
 role: component
 purpose:
@@ -155,6 +184,113 @@ actions:
     validateReferences: Ensures all referenced entities exist
     validateRelations: Verifies relation constraints are met
     reportViolations: Returns collection of validation errors
+
+entity: CodeEntity
+role: struct
+purpose:
+    - Structured representation of a parsed code element (file, class, function, or module)
+    - Extracted from source code by @CodeParser using AST parsing
+    - Contains semantic information for embedding generation by @TraceabilityMatcher
+properties:
+    entityType is one of {file, class, function, module}, type of code element
+    qualifiedName is String, fully qualified identifier (e.g., "payment.gateway.PaymentService.process_payment")
+    filePath is String, absolute path to source file
+    startLine is Number, beginning line number in file
+    endLine is Number, ending line number in file
+    sourceCode is String, actual implementation code
+    docstring is String, extracted documentation or comments, may be empty
+    language is String, programming language (python, typescript, etc)
+    parentContext is String, parent class or module name for context
+    signature is String, function/method signature including parameters
+
+entity: ParsedCodeRepository
+role: struct
+purpose:
+    - Collection of @CodeEntity objects representing parsed source code repository
+    - Output from @CodeParser after scanning codebase
+    - Stored in @KnowledgeGraph alongside specification entities
+properties:
+    repositoryPath is String, root directory of code repository
+    language is String, primary programming language
+    entities is collection of @CodeEntity, all parsed code elements
+    fileIndex is collection of String, paths of files that were parsed
+    parseTimestamp is Number, when repository was last parsed
+    contentHash is String, hash of repository state for change detection
+
+entity: CodeParser
+role: component
+purpose:
+    - Parses source code files into @CodeEntity structures using language-specific AST parsers
+    - Extracts classes, functions, and modules at appropriate granularity
+    - Enriches entities with contextual information for better semantic matching
+    - Filters out trivial or private elements that shouldn't be traced
+properties:
+    language is String, target programming language
+    astParser is component, language-specific parser (ast module for Python, ts-morph for TypeScript)
+    granularity is one of {function, class, file}, parsing level, default function
+actions:
+    parseFile: Parses single file into collection of @CodeEntity objects
+    parseRepository: Scans entire repository and returns @ParsedCodeRepository
+    enrichWithContext: Adds parent class/module context to function entities
+    shouldIndex: Filters out private functions, trivial getters, or test helpers
+    extractSignature: Generates function signature including parameter types
+
+entity: TraceLink
+role: struct
+purpose:
+    - Represents discovered semantic relationship between any two entities across layers
+    - Supports product-to-design, design-to-implementation, implementation-to-code, and all reverse directions
+    - Created by @TraceabilityMatcher through embedding similarity analysis
+    - Stored in @KnowledgeGraph to enable bidirectional tracing across all layers
+properties:
+    sourceQualifiedName is String, source entity identifier (e.g., "NexusAssistant.PaymentFlow")
+    sourceLayer is one of {product, design, implementation, code}, source layer
+    targetQualifiedName is String, target entity identifier (e.g., "PaymentDesign.PaymentGateway" or "payment.gateway.PaymentService")
+    targetLayer is one of {product, design, implementation, code}, target layer
+    confidence is Number, cosine similarity score between 0.0 and 1.0
+    rationale is String, human-readable explanation of why entities are related
+    direction is one of {forward, backward}, tracing direction relative to product-to-code flow
+    discoveredTimestamp is Number, when link was generated
+    embeddingModel is String, model used for semantic matching
+
+entity: TraceabilityMatcher
+role: component
+purpose:
+    - Discovers implicit semantic relationships across all layers (product, design, implementation, code)
+    - Generates embeddings for specification entities at all layers and @CodeEntity objects
+    - Uses vector similarity search to find related entities following traceability rules
+    - Stores discovered @TraceLink objects in @KnowledgeGraph
+    - Maintains flexible traceability: product→design (required), design→implementation or design→code (alternative paths), implementation→code
+properties:
+    embeddingService is String, OpenAI API for text-embedding-3-small model
+    embeddingDimensions is Number, vector size, 1536 for text-embedding-3-small
+    similarityThreshold is Number, minimum cosine similarity for valid trace link, default 0.7
+    cache is @EmbeddingCache, content-based caching to avoid redundant API calls
+    vectorStore is collection, stores embeddings indexed by qualified name and layer
+actions:
+    generateEmbedding: Calls embedding service to create vector representation of text
+    indexSpecEntity: Creates embedding for specification entity from purpose, properties, and actions
+    indexCodeEntity: Creates embedding for @CodeEntity using code, docstring, and context
+    findSimilarEntities: Performs cosine similarity search in vector store filtered by valid target layers
+    createTraceLink: Generates @TraceLink with confidence score and rationale
+    discoverLayerLinks: Discovers links following valid layer transitions (product→design, design→implementation, design→code, implementation→code)
+    discoverAllLinks: Indexes all entities and discovers trace links across all layers following layered traceability rules
+
+entity: EmbeddingCache
+role: component
+purpose:
+    - Caches generated embeddings by content hash to avoid redundant API calls
+    - Implements full file reindex strategy with content-based caching for efficiency
+    - Stores cache in memory with optional persistence to disk
+properties:
+    storageType is one of {memory, disk}, cache storage mechanism, default memory
+    maxCacheSize is Number, maximum cached embeddings, default 10000
+    cachePath is String, file path for persistent cache, used when storageType is disk
+actions:
+    getOrGenerate: Returns cached embedding if content unchanged, generates new one otherwise
+    computeContentHash: Generates SHA256 hash of entity content for cache key
+    invalidate: Removes cached embedding when source content changes
+    persist: Writes in-memory cache to disk for persistence across restarts
 
 
 scenario: SpecificationUpdate
@@ -170,4 +306,106 @@ scenario: SystemInitialization
 On startup, @SpecificationStore loads all .nxs files from configured directories.
 @NexusParser parses each file in parallel. 
 @KnowledgeGraph builds the complete entity relationship graph with three-layer model. 
-@APIGateway becomes ready to serve requests.
+@APIGateway and @MCPServer become ready to serve requests.
+
+scenario: MCPAgentIntegration
+External AI agent connects to @NexusAssistantService through @MCPServer using MCP protocol.
+Agent discovers available tools exposed by @MCPServer.
+Agent requests specification context via MCP tool call.
+@MCPServer routes request to @QueryProcessor, which queries @KnowledgeGraph.
+Results are formatted by @MCPServer as MCP response and returned to agent.
+
+scenario: CodeRepositoryIndexing
+Developer configures code repository path in @NexusAssistantService.
+@CodeParser scans repository and parses source files using language-specific AST parser.
+For each file, @CodeParser extracts classes and functions into @CodeEntity objects.
+@CodeParser enriches entities with parent context and filters out trivial/private functions.
+@ParsedCodeRepository is created with all @CodeEntity objects and stored in @KnowledgeGraph.
+
+scenario: TraceabilityDiscovery
+After specifications and code are loaded into @KnowledgeGraph, @TraceabilityMatcher begins discovery.
+For each specification entity in each layer, @TraceabilityMatcher generates semantic embedding using OpenAI API.
+@EmbeddingCache checks if embedding already exists for this content hash, returns cached or generates new.
+For each @CodeEntity, @TraceabilityMatcher creates contextual summary and generates embedding.
+@TraceabilityMatcher computes cosine similarity following valid layer transitions:
+    - Product layer entities compared to design layer entities (always)
+    - Design layer entities compared to both implementation layer entities AND code entities (alternative paths)
+    - Implementation layer entities compared to code entities (when implementation specs exist)
+When similarity exceeds threshold (default 0.7), @TraceLink is created with confidence score and direction.
+All @TraceLink objects are stored in @KnowledgeGraph enabling full chain traceability with flexible paths.
+@QueryProcessor can traverse multiple @TraceLink objects to trace from product requirement through design to either implementation specs or directly to code.
+
+scenario: ForwardTracing
+Developer queries "what code implements PaymentGateway specification?"
+@QueryProcessor identifies PaymentGateway entity in @KnowledgeGraph design layer.
+@QueryProcessor calls getTraceLinks with forward direction to find code implementations.
+@KnowledgeGraph returns @TraceLink objects pointing to @CodeEntity objects.
+@QueryProcessor retrieves full @CodeEntity details including file paths and line numbers.
+Results returned as JSON showing matched code with confidence scores and rationale.
+
+scenario: BackwardTracing
+Developer views payment_service.py file and queries "why does this code exist?"
+@QueryProcessor extracts @CodeEntity objects for functions in that file from @KnowledgeGraph.
+@QueryProcessor calls getTraceLinks with backward direction starting from code layer.
+@KnowledgeGraph returns @TraceLink objects from code to implementation layer specifications.
+@QueryProcessor follows next @TraceLink objects from implementation to design layer.
+@QueryProcessor follows final @TraceLink objects from design to product layer.
+Results show complete chain: code ← implementation spec ← design spec ← product requirement.
+Each link includes confidence score and rationale explaining the connection.
+Developer sees full business justification and architectural reasoning for the code.
+
+scenario: FullChainTracingWithImplementation
+Product manager defines PaymentFlow requirement in product layer.
+Developer queries "how is PaymentFlow implemented?"
+@QueryProcessor finds PaymentFlow entity in product layer of @KnowledgeGraph.
+@QueryProcessor traverses @TraceLink from product to design layer, finds PaymentGateway entity.
+@QueryProcessor traverses @TraceLink from design to implementation layer, finds PaymentService component spec.
+@QueryProcessor traverses @TraceLink from implementation to code, finds payment.gateway.PaymentService.process_payment function.
+Results show complete forward chain: product requirement → design architecture → implementation spec → actual code.
+Each hop includes the traced entity, confidence score, and rationale for connection.
+
+scenario: DirectDesignToCodeTracing
+Product manager defines SearchFeature requirement in product layer.
+Developer queries "how is SearchFeature implemented?"
+@QueryProcessor finds SearchFeature entity in product layer of @KnowledgeGraph.
+@QueryProcessor traverses @TraceLink from product to design layer, finds SearchAPI entity.
+@QueryProcessor checks for implementation layer links but finds none (design is detailed enough).
+@QueryProcessor traverses @TraceLink directly from design to code, finds search.api.SearchService.search function.
+Results show shorter chain: product requirement → design architecture → actual code (skipping implementation layer).
+This path is used when design specifications are detailed enough and no separate implementation spec exists.
+
+scenario: CodeChangeReindexing
+Developer modifies payment_service.py file, @SpecificationStore detects change.
+@CodeParser re-parses the modified file into new @CodeEntity objects.
+@KnowledgeGraph removes old code entities from that file using removeCodeEntitiesFromFile.
+@EmbeddingCache checks content hashes - unchanged functions keep cached embeddings.
+@TraceabilityMatcher regenerates embeddings only for modified functions using @EmbeddingCache.
+@TraceabilityMatcher recomputes @TraceLink objects for changed entities and updates @KnowledgeGraph.
+Queries immediately reflect updated traceability without full system reindex.
+
+rule: FunctionLevelGranularity
+@CodeParser must extract individual functions and methods as separate @CodeEntity objects for precise traceability between specification actions and code implementations
+
+rule: ContentBasedCaching
+@EmbeddingCache uses SHA256 hash of entity content as cache key, enabling efficient reindex when only some functions change in a file
+
+rule: FullFileReindexStrategy
+When code file changes, @CodeParser re-parses entire file rather than attempting incremental AST diff - simpler and more reliable with @EmbeddingCache optimization
+
+rule: SemanticSimilarityThreshold
+@TraceabilityMatcher only creates @TraceLink when cosine similarity exceeds configured threshold (default 0.7), avoiding spurious low-confidence connections
+
+rule: ContextEnrichment
+@CodeParser must include parent class and module information in @CodeEntity to improve semantic matching accuracy for functions with generic names
+
+rule: LayeredTraceability
+@TraceLink objects follow valid layer transitions in the traceability chain: product→design (required), design→implementation (optional), design→code (alternative when no implementation spec), implementation→code (when implementation exists) - product cannot link directly to implementation or code, bypassing design layer
+
+rule: FlexibleDesignLinks
+Design specifications can trace to either implementation layer or directly to code - @TraceabilityMatcher compares design entities against both implementation entities and code entities, creating links to whichever has higher semantic similarity
+
+rule: EmbeddingModelConsistency
+All embeddings must use same model (text-embedding-3-small) and dimensions (1536) to ensure vector comparisons are valid across specification and code entities
+
+rule: ValidLayerTransitions
+@TraceabilityMatcher only creates @TraceLink objects for valid layer transitions: product→design, design→implementation, design→code, implementation→code - filters vector store by these rules to prevent invalid transitions like product→code or implementation→design

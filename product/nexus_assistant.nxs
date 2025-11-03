@@ -8,19 +8,25 @@ purpose:
     - Enables product managers to manage requirements and create new features effectively
     - Enables developers to manage system design that supports product needs and to implement features
     - Enables AI agents to understand exact implementation requirements from product and architectural designs
+    - Automatically discovers which code implements which specifications using AI analysis
+    - Shows developers and product managers how requirements connect to actual implementation
     - Reduces miscommunication between product vision, system design and technical execution
 
 properties:
     productView is @ProductView, collection of product-level views managed by the assistant
     systemDesignView is @SystemDesignView, collection of system design views managed by the assistant
     componentImplementations is @ComponentImplementation, collection of component-level implementations managed by the assistant
+    mcpInterface is @MCPServerInterface, protocol interface for external AI agent access
 
 actions:
     provideImplementationContext: Generates @ImplementationContext on-demand by synthesizing product requirements and architectural decisions for specific implementation needs
     analyzeSpecifications: Examines @ProductView and @SystemDesignView to identify gaps, conflicts, or missing details
-    traceRequirement: Traces a requirement from @ProductView through @SystemDesignView to @ComponentImplementation
-    navigateLayers: Provides context across product, design, and implementation layers for a given feature
+    traceRequirement: Traces a requirement from @ProductView through @SystemDesignView to @ComponentImplementation and actual source code
+    findImplementingCode: Shows which source code files and functions implement a given specification
+    findSpecificationForCode: Shows which product requirements and design specs explain why given code exists (traces backward through layers)
+    navigateLayers: Provides context following the layered flow: product requirements → design specifications → implementation details
     identifyRelatedEntities: Determines which entities may be affected by changes or are important in a given context
+    assessCoverage: Reports which requirements have been implemented and which remain as gaps
     manageRequirements: Helps organize, track, and maintain @ProductView for product managers
     manageSystemDesign: Helps organize, track, and maintain @SystemDesignView for developers
     validateFeatureReadiness: Checks if new feature specifications are complete and ready for design and implementation
@@ -108,10 +114,27 @@ purpose:
     - Contains APIs, data structures, algorithms, and technical constraints
     - Written in Nexus language focusing on concrete implementation requirements
 
+entity: MCPServerInterface
+role: service
+purpose:
+    - Exposes @NexusAssistant capabilities to external AI agents and tools via Model Context Protocol
+    - Enables third-party AI systems to query product specifications and system designs
+    - Provides standardized protocol interface for both internal and external agent integration
+    - Allows external tools to request @ImplementationContext and navigate specification layers
+
+properties:
+    exposedOperations is @NexusAssistant, subset of @NexusAssistant actions available through MCP protocol
+
+actions:
+    serveMCPRequest: Handles incoming MCP protocol requests from external AI agents
+    exposeContext: Provides @ImplementationContext through MCP interface
+    exposeNavigation: Enables specification layer navigation for external clients
+
 scenario: DeveloperSeeksImplementationGuidance
 Given a developer working on a new feature
 When they query the @NexusAssistant with a specific implementation question
 Then the assistant analyzes both @ProductView and @SystemDesignView
+And shows existing code that implements similar features
 And provides contextual implementation guidance 
 And includes specific code patterns, constraints, and business logic requirements
 
@@ -135,18 +158,40 @@ And suggests clarifications needed before implementation can proceed
 scenario: MultiLayerNavigation
 Given a developer or AI agent needs to understand a feature
 When they query @NexusAssistant about the feature
-Then the assistant provides context across all three layers:
+Then the assistant provides context across all three layers in sequence:
     - @ProductView: WHY the feature exists and WHAT it does for users
-    - @SystemDesignView: HOW the feature is architecturally structured
-    - @ComponentImplementation: Specific technical details and code-level requirements
-And enables navigation between layers to trace from business value to implementation
+    - @SystemDesignView: HOW the product requirements are translated into technical architecture
+    - @ComponentImplementation: Specific technical details and code-level requirements that realize the design
+And enables navigation between layers following the product → design → implementation flow
 
 scenario: TraceRequirementToCode
 Given a business requirement defined in @ProductView
 When a developer needs to implement it
 Then @NexusAssistant traces the requirement through @SystemDesignView to specific @ComponentImplementation
-And shows which components implement which product features
+And shows which source code files and functions implement which product features
 And provides implementation guidance consistent across all three layers
+
+scenario: FindWhyCodeExists
+Given a developer looking at unfamiliar code
+When they ask @NexusAssistant why this code exists
+Then the assistant traces backward from code through @SystemDesignView to @ProductView
+And shows the design decisions that translated requirements into this implementation
+And reveals the product requirements that justify this code
+And explains the business value delivered by this code
+
+scenario: IdentifyImplementationGaps
+Given @ProductManager reviewing product roadmap
+When they query @NexusAssistant about feature status
+Then the assistant shows which requirements are fully implemented
+And highlights which requirements have no corresponding code yet
+And helps prioritize implementation work based on gaps
+
+scenario: AssessChangeImpact
+Given @Developer planning to modify code
+When they query @NexusAssistant about potential impacts
+Then the assistant identifies which requirements might be affected
+And shows which other code depends on the changes
+And warns about risks to product features
 
 rule: ContextualAccuracy
 @NexusAssistant must only provide implementation guidance that is consistent with both product requirements and architectural constraints
@@ -163,8 +208,20 @@ Implementation context must synthesize both product manager perspective (WHAT/WH
 rule: ThreeLayerConsistency
 Information must remain consistent across @ProductView, @SystemDesignView, and @ComponentImplementation layers
 
+rule: LayeredTraceability
+Product requirements connect to code through design specifications, never directly - every @ProductView requirement traces through corresponding @SystemDesignView elements to reach @ComponentImplementation and actual code
+
 rule: BidirectionalTraceability
-The assistant must support tracing both top-down (from product to component) and bottom-up (from component to product value)
+The assistant must support tracing both top-down (from product requirements through design to actual code) and bottom-up (from code through design to product value and business justification)
+
+rule: AutomaticTraceDiscovery
+@NexusAssistant must automatically discover connections between specifications and code without requiring manual tagging or linking
+
+rule: CoverageVisibility
+Product managers and developers must be able to see which requirements have been implemented and which have gaps
+
+rule: ImpactAwareness
+When code or specifications change, @NexusAssistant must identify and communicate what else might be affected
 
 rule: RelationalImpactAnalysis
 @NexusAssistant must identify and present all related entities that may be affected by changes or whose relations are important to consider in any context, including implementation, design decisions, product changes, or understanding existing features
