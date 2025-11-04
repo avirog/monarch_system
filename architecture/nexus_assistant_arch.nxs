@@ -128,8 +128,10 @@ properties:
     embeddingService is String, OpenAI API for text-embedding-3-small model, shared with @TraceabilityMatcher
     semanticThreshold is Number, minimum cosine similarity for semantic query matches, default 0.6
     cache is @EmbeddingCache, shared cache with @TraceabilityMatcher for query embeddings
+    intentParser is LLM, uses OpenAI chat completion for natural language query understanding with structured output, falls back to regex patterns if LLM unavailable
+    llmModel is String, model for query intent parsing, default gpt-4o-mini
 actions:
-    parseQuery: Extracts intent and entities from user query
+    parseQuery: Extracts intent and entities from user query using @intentParser LLM with regex fallback, returns structured QueryIntent with query_type, entity_names, layer filters, and parameters
     determineScope: Identifies which specification layers to search
     executeQuery: Queries @KnowledgeGraph and returns results
     semanticSearch: Generates embedding for natural language query and finds semantically similar entities using cosine similarity
