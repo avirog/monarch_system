@@ -91,7 +91,8 @@ purpose:
     - Stores entities and typed relations (@Relation) between them (purpose, property, action, rule, scenario, explicit)
     - Maintains three-layer model: product views, system design views, and component implementations
     - Stores @CodeEntity objects and @TraceLink objects for code traceability
-    - Allows @QueryProcessor to perform fast lookups and traversals across specifications and code
+    - Provides millisecond-speed lookups and traversals across specifications and code using optimized in-memory indexes
+    - Enables rapid entity discovery through efficient filtering by catalog, layer, and role
 properties:
     indexingStrategy is InMemory
     enableCrossFileLinks is Boolean, whether to link entities across different specification files, default true
@@ -109,30 +110,44 @@ actions:
     getTraceLinks: Returns @TraceLink objects for an entity (forward to next layer or backward to previous layer)
     traceChain: Follows multiple @TraceLink objects across layers to trace from any layer to any other layer
     findPath: Discovers paths between two entities through design layer
-    getEntities: Returns all entities
+    getEntities: Returns all entities, optionally filtered by catalog, layer, or role
     getAllRelations: Returns all relations
+    getCatalogs: Returns list of all catalogs with entity counts and layer information
+    filterEntitiesByRole: Returns entities matching specific role (actor, service, component, etc)
     removeCodeEntitiesFromFile: Removes all code entities from a specific file (for reindexing)
 
 entity: QueryProcessor
 role: component
 purpose:
-    - Interprets developer and AI agent queries
-    - Searches @KnowledgeGraph for relevant entities and relationships using both exact matching and semantic search
+    - Interprets developer and AI agent queries with deep understanding of intent and context
+    - Prioritizes accuracy and completeness of results over response speed in all search operations
+    - Searches @KnowledgeGraph comprehensively for relevant entities and relationships using both exact matching and semantic search
+    - Optimizes for speed through embedding caching and vector search without compromising result quality
+    - Deeply understands entity purposes, properties, actions, and relationships for accurate contextual matching
+    - Searches across multiple layers to ensure complete coverage of relevant entities
+    - Ranks results by semantic relevance with appropriate thresholds to balance precision and recall
     - Handles traceability queries across specifications and code using @TraceLink objects
     - Supports natural language queries through embedding-based semantic matching
+    - Enables entity discovery and exploration through filtering and browsing
     - Returns query results as JSON
 properties:
     queryLanguage is one of {Natural, Structured}
-    maxResults is Number, maximum results to return, default 10
+    maxResults is Number, maximum results to return after ranking, default 10
     semanticSearchEnabled is Boolean, enables embedding-based semantic search for natural language queries, default true
     embeddingService is String, OpenAI API for text-embedding-3-small model, shared with @TraceabilityMatcher
-    semanticThreshold is Number, minimum cosine similarity for semantic query matches, default 0.6
+    semanticThreshold is Number, minimum cosine similarity for semantic query matches tuned to balance precision and recall, default 0.6
     cache is @EmbeddingCache, shared cache with @TraceabilityMatcher for query embeddings
     intentParser is LLM, uses OpenAI chat completion for natural language query understanding with structured output, falls back to regex patterns if LLM unavailable
     llmModel is String, model for query intent parsing, default gpt-4o-mini
+    vectorStore is collection, pre-indexed entity embeddings from @TraceabilityMatcher enabling fast similarity search
+    rankingWeights is struct, configurable weights for ranking factors tuned for accuracy (similarity 0.5, richness 0.2, centrality 0.2, layer_match 0.1)
+    parallelSearchEnabled is Boolean, enables concurrent search across multiple layers without compromising completeness, default true
+    queryContextCache is collection, maintains recent query context for iterative refinement
+    minConfidenceScore is Number, minimum composite confidence score for result inclusion ensuring quality, default 0.3
+    exhaustiveSearch is Boolean, when true searches all entities before filtering ensuring no relevant results missed, default true
 actions:
     parseQuery: Extracts intent and entities from user query using @intentParser LLM with regex fallback, returns structured QueryIntent with query_type, entity_names, layer filters, and parameters
-    determineScope: Identifies which specification layers to search
+    determineScope: Identifies which specification layers to search based on query context
     executeQuery: Queries @KnowledgeGraph and returns results
     semanticSearch: Generates embedding for natural language query and finds semantically similar entities using cosine similarity
     matchQueryIntent: Analyzes query text to understand whether user wants entities, relationships, layer browsing, or traceability
@@ -140,6 +155,13 @@ actions:
     traceToCode: Follows @TraceLink objects from specification entity to implementing code
     traceToSpec: Follows @TraceLink objects backward from code to specification requirements
     assessCoverage: Identifies specifications without corresponding code (gaps in implementation)
+    discoverEntities: Lists entities from @KnowledgeGraph filtered by catalog, layer, role, or semantic context
+    exploreEntity: Retrieves detailed entity information including purpose, properties, actions, and relationships from @KnowledgeGraph
+    browseEntityGraph: Navigates entity relationships enabling exploration of system structure and dependencies
+    findRelevantEntities: Rapidly retrieves contextually relevant entities by generating query embedding, searching @KnowledgeGraph vector store with layer filtering, and matching against entity purposes, properties, actions, and relationships
+    rankByRelevance: Applies multi-factor ranking algorithm considering cosine similarity score, entity metadata richness (number of properties and actions), relationship centrality (in/out-degree in graph), layer match to query context, and returns sorted results with relevance explanations
+    crossLayerSearch: Searches multiple layers (product, design, implementation, code) in parallel, retrieves results from each, identifies cross-layer connections via @TraceLink objects, and unifies results showing layer relationships
+    extractQueryConcepts: Analyzes natural language query to extract key concepts, domain terms, and intent signals for enhanced semantic matching
 
 entity: SpecificationStore
 role: platform
@@ -170,15 +192,15 @@ entity: MCPServer
 role: component
 purpose:
     - Implements Model Context Protocol server for AI agent integration
-    - Exposes @QueryProcessor capabilities through MCP protocol
-    - Enables both internal and external AI agents to query specifications
+    - Exposes @QueryProcessor capabilities through MCP protocol including entity discovery and exploration
+    - Enables both internal and external AI agents to query specifications and discover system structure
 properties:
     protocolVersion is String, MCP protocol version supported, default 1.0
     transportType is one of {stdio, http}, communication transport mechanism, default stdio
     toolsEnabled is Boolean, whether to expose MCP tools, default true
 actions:
     handleMCPRequest: Processes incoming MCP protocol request
-    exposeTool: Registers @QueryProcessor operations as MCP tools
+    exposeTool: Registers @QueryProcessor operations as MCP tools including discoverEntities, exploreEntity, and browseEntityGraph
     formatMCPResponse: Serializes results in MCP protocol format
 
 entity: ValidationEngine
@@ -267,8 +289,10 @@ entity: TraceabilityMatcher
 role: component
 purpose:
     - Discovers implicit semantic relationships across all layers (product, design, implementation, code)
-    - Generates embeddings for specification entities at all layers and @CodeEntity objects
+    - Generates rich embeddings for specification entities by indexing complete purpose statements, property descriptions, and action definitions
+    - Creates semantic representations capturing deep entity meaning for precise contextual matching
     - Uses vector similarity search to find related entities following traceability rules
+    - Populates shared vectorStore enabling @QueryProcessor to perform rapid semantic queries
     - Stores discovered @TraceLink objects in @KnowledgeGraph
     - Maintains flexible traceability: product→design (required), design→implementation or design→code (alternative paths), implementation→code
 properties:
@@ -279,12 +303,13 @@ properties:
     vectorStore is collection, stores embeddings indexed by qualified name and layer
 actions:
     generateEmbedding: Calls embedding service to create vector representation of text
-    indexSpecEntity: Creates embedding for specification entity from purpose, properties, and actions
+    indexSpecEntity: Creates rich embedding for specification entity by concatenating complete purpose statements, all property descriptions with types, and all action definitions into semantic summary, then generating embedding capturing full entity meaning
     indexCodeEntity: Creates embedding for @CodeEntity using code, docstring, and context
     findSimilarEntities: Performs cosine similarity search in vector store filtered by valid target layers
     createTraceLink: Generates @TraceLink with confidence score and rationale
     discoverLayerLinks: Discovers links following valid layer transitions (product→design, design→implementation, design→code, implementation→code)
     discoverAllLinks: Indexes all entities and discovers trace links across all layers following layered traceability rules
+    populateVectorStore: Builds optimized vectorStore index for @QueryProcessor with all entity embeddings organized by layer and catalog for fast filtered search
 
 entity: EmbeddingCache
 role: component
@@ -302,6 +327,115 @@ actions:
     invalidate: Removes cached embedding when source content changes
     persist: Writes in-memory cache to disk for persistence across restarts
 
+
+scenario: DiscoverEntitiesInCatalog
+User queries "List all entities in NexusAssistant catalog"
+@QueryProcessor parses intent and identifies catalog filter.
+@QueryProcessor calls @KnowledgeGraph getEntities with catalog="NexusAssistant".
+@KnowledgeGraph returns all entities from that catalog with roles and brief purposes.
+@QueryProcessor formats results grouped by layer and returns as JSON.
+
+scenario: FilterEntitiesBySemanticContext
+User queries "Find entities related to parsing"
+@QueryProcessor generates embedding for "parsing" using embeddingService.
+@QueryProcessor performs semantic search across all entity embeddings in @KnowledgeGraph.
+Entities like @NexusParser, @CodeParser, and @ValidationEngine match above semantic threshold.
+@QueryProcessor returns matched entities with confidence scores and explains their parsing capabilities.
+
+scenario: ExploreEntityWithRelationships
+User queries "Show details for NexusParser entity"
+@QueryProcessor calls @KnowledgeGraph getEntity("NexusParser").
+@QueryProcessor retrieves entity definition with purpose, properties, and actions.
+@QueryProcessor calls @KnowledgeGraph getRelations("NexusParser") to get all relationships.
+Results include complete entity structure plus related entities like @ValidationEngine, @KnowledgeGraph, and @ParsedSpecification.
+@QueryProcessor returns full entity context enabling deeper exploration.
+
+scenario: BrowseEntitiesByLayer
+User queries "Show all design layer entities"
+@QueryProcessor identifies layer filter from query intent.
+@QueryProcessor calls @KnowledgeGraph getEntities with layer="design".
+@KnowledgeGraph returns entities from design catalogs (architecture files).
+@QueryProcessor groups results by catalog and includes entity counts.
+Results show complete design layer structure across all architectural specifications.
+
+scenario: FilterEntitiesByRole
+User queries "Find all components"
+@QueryProcessor recognizes role filter in query.
+@QueryProcessor calls @KnowledgeGraph filterEntitiesByRole("component").
+@KnowledgeGraph returns entities where role="component" across all catalogs.
+Results include @QueryProcessor, @MCPServer, @ValidationEngine, @CodeParser, @TraceabilityMatcher, @EmbeddingCache.
+@QueryProcessor formats results showing how components interact in system architecture.
+
+scenario: ExploreSystemOverview
+User requests system overview without specific query
+@QueryProcessor calls @KnowledgeGraph getCatalogs to list all catalogs.
+@KnowledgeGraph returns catalog statistics with entity counts per layer.
+@QueryProcessor identifies key entities in each catalog based on relation counts.
+Results provide high-level map of system structure with entry points for further exploration.
+
+scenario: AccurateContextualEntityRetrieval
+User queries "What entities are involved in processing payment transactions?"
+@QueryProcessor calls extractQueryConcepts to identify key terms: "payment", "transactions", "processing".
+@QueryProcessor generates query embedding using embeddingService via @EmbeddingCache (cached if query seen before).
+@QueryProcessor calls findRelevantEntities with exhaustiveSearch=true ensuring all entities are evaluated.
+Searches pre-indexed vectorStore completely (populated by @TraceabilityMatcher) comparing query against all entity embeddings.
+Computes cosine similarity for every entity to ensure no relevant matches are missed.
+Applies semanticThreshold=0.6 to filter candidates, tuned to favor recall over premature filtering.
+@QueryProcessor retrieves all matching entities from @KnowledgeGraph: PaymentFlow, PaymentGateway, PaymentService, TransactionValidator, plus edge cases.
+@QueryProcessor calls rankByRelevance applying multi-factor scoring with accuracy-tuned weights.
+Verifies each result meets minConfidenceScore=0.3 threshold ensuring quality.
+Returns complete, accurate ranked results with confidence scores and relevance explanations (typical response time 200-500ms prioritizing correctness).
+
+scenario: DeepSemanticUnderstanding
+User asks "Which features help users recover from errors?"
+@QueryProcessor generates embedding for query capturing semantic meaning of "error recovery".
+@QueryProcessor searches vectorStore comparing query embedding against all entity embeddings.
+@QueryProcessor identifies semantic matches beyond keyword matching:
+    - Entities with "retry", "rollback", "validation" in actions match "recover from errors" semantically
+    - Entities with "error handling", "resilience" in purposes match even without exact term "recover"
+    - @ValidationEngine matches (0.73 similarity) due to error detection and reporting capabilities
+@QueryProcessor retrieves full entity details from @KnowledgeGraph including purposes, properties, actions.
+@QueryProcessor examines entity relationships to find connected error management entities.
+Results include entities from multiple layers explaining complete error recovery ecosystem with semantic reasoning.
+
+scenario: CompleteCrossLayerSearch
+User queries "What defines and implements user authentication?"
+@QueryProcessor recognizes cross-layer intent from query containing "defines" (product) and "implements" (design/code).
+@QueryProcessor enables parallelSearchEnabled and launches concurrent exhaustive searches:
+    - Thread 1: searches ALL product layer entities in vectorStore completely
+    - Thread 2: searches ALL design layer entities in vectorStore completely
+    - Thread 3: searches ALL implementation layer entities in vectorStore completely
+All searches use same query embedding against layer-filtered vector stores with exhaustiveSearch=true.
+Each thread computes similarity for every entity in its layer ensuring no relevant entities missed.
+Product search finds all authentication features, design search finds all auth components including edge cases.
+@QueryProcessor calls crossLayerSearch to retrieve ALL @TraceLink objects between matched entities.
+@KnowledgeGraph provides complete trace connections showing product→design→code relationships.
+@QueryProcessor unifies results showing Authentication feature traces to AuthService component traces to auth_handler.py code, plus related entities.
+Returns complete cross-layer view with traceability (typical 200-600ms prioritizing completeness over speed).
+
+scenario: IntelligentEntityRanking
+@QueryProcessor receives multiple matching entities from semantic search with raw similarity scores.
+@QueryProcessor applies rankByRelevance multi-factor algorithm:
+    1. Semantic similarity score (weight 0.5): cosine similarity from vector search
+    2. Entity richness (weight 0.2): count of properties + actions indicating detail level
+    3. Relationship centrality (weight 0.2): in-degree + out-degree from @KnowledgeGraph relations
+    4. Layer match (weight 0.1): bonus if entity layer matches query context
+For each entity, @QueryProcessor computes weighted score and generates relevance explanation.
+Example: PaymentGateway scores (0.82 * 0.5) + (12/20 * 0.2) + (8/15 * 0.2) + (1.0 * 0.1) = 0.64 total relevance.
+@QueryProcessor sorts by composite score and formats results with per-entity explanations.
+Results show most contextually relevant entities first with transparent scoring rationale.
+
+scenario: AccurateIterativeRefinement
+User performs sequence: "Find payment entities" → explores PaymentGateway → "Show related entities".
+First query: @QueryProcessor generates embedding, exhaustively searches vectorStore ensuring all payment-related entities found.
+Returns PaymentGateway and all related entities with accurate relevance scores (typical 200-400ms).
+@QueryProcessor stores query context in queryContextCache including query embedding and selected entity for efficiency.
+User explores PaymentGateway: @QueryProcessor retrieves complete entity details from @KnowledgeGraph with all properties, actions, and relationships.
+Second query "Show related entities": @QueryProcessor detects context from queryContextCache (PaymentGateway).
+@QueryProcessor calls @KnowledgeGraph getRelations("PaymentGateway") retrieving ALL connected entities without filtering.
+@QueryProcessor enhances results using cached embeddings from first search to provide relevance scores, no redundant API calls.
+Returns complete relationship graph ensuring user sees all relevant connections (typical 50-150ms due to context awareness).
+@EmbeddingCache hit rate improves with repeated explorations enabling efficient iterative discovery without sacrificing completeness.
 
 scenario: SpecificationUpdate
 Developer modifies a .nxs file. 
@@ -466,3 +600,33 @@ rule: QueryEmbeddingCaching
 
 rule: SharedEmbeddingService
 @QueryProcessor and @TraceabilityMatcher must share same embeddingService configuration (OpenAI text-embedding-3-small, 1536 dimensions) and @EmbeddingCache instance to ensure vector compatibility and maximize cache efficiency
+
+rule: EntityDiscoverability
+@KnowledgeGraph must support entity filtering by catalog, layer, and role, and @QueryProcessor must enable users to discover entities through browsing, semantic search, and structured queries without requiring prior knowledge of entity names
+
+rule: AccuracyFirst
+@QueryProcessor must prioritize accuracy and completeness of results over response speed - returning all relevant entities with high precision is more important than fast responses, though reasonable performance (sub-second response times) should be maintained through caching and indexing optimizations
+
+rule: OptimizedSemanticRetrieval
+@QueryProcessor should optimize response times by using pre-indexed embeddings from @TraceabilityMatcher, efficient vector similarity search, and caching through @EmbeddingCache - but performance optimizations must never skip entities or compromise result quality
+
+rule: DeepEntityUnderstanding
+@TraceabilityMatcher must index complete entity semantics including purpose statements, property descriptions, and action definitions when generating embeddings - @QueryProcessor must match queries against this rich semantic representation, not just entity names or simple keywords
+
+rule: MultiFactorRanking
+@QueryProcessor must rank results using composite scoring algorithm with configurable weights: semantic similarity (default 0.5), entity richness measured by properties+actions count (default 0.2), relationship centrality from graph degree (default 0.2), and layer appropriateness (default 0.1) - each result must include relevance explanation
+
+rule: CrossLayerCompleteness
+@QueryProcessor must support parallel search across product, design, implementation, and code layers when parallelSearchEnabled is true, using layer-filtered vector stores and unifying results with @TraceLink connections - parallel execution must ensure all layers are searched completely without missing entities
+
+rule: ContextualCaching
+@QueryProcessor should maintain queryContextCache for recent searches and explorations to improve response times for iterative refinement without compromising accuracy - cache includes query embeddings, selected entities, and relationship graphs eliminating redundant computations
+
+rule: VectorStoreOptimization
+@QueryProcessor must reuse vectorStore populated by @TraceabilityMatcher during entity indexing - no separate embedding generation for search, all entity embeddings pre-computed and cached enabling efficient similarity computations
+
+rule: ExhaustiveSearchDefault
+@QueryProcessor must default to exhaustiveSearch=true ensuring all entities are evaluated during semantic search - early termination optimizations should only be enabled when explicitly configured and must not compromise result completeness
+
+rule: ThresholdTuning
+Similarity thresholds must be tuned to favor recall (finding all relevant entities) while maintaining acceptable precision - missing relevant entities is more harmful than including some less relevant ones that can be filtered through ranking

@@ -5,6 +5,8 @@ entity: NexusAssistant
 role: service
 purpose:
     - Bridges the gap between product specifications and implementation by providing contextual guidance
+    - Rapidly finds and retrieves relevant entities from any layer using deep semantic understanding of questions and specifications
+    - Deeply understands entity purposes, properties, actions, and relationships to answer contextual queries with precision
     - Enables product managers to manage requirements and create new features effectively
     - Enables developers to manage system design that supports product needs and to implement features
     - Enables AI agents to understand exact implementation requirements from product and architectural designs
@@ -31,6 +33,11 @@ actions:
     manageSystemDesign: Helps organize, track, and maintain @SystemDesignView for developers
     validateFeatureReadiness: Checks if new feature specifications are complete and ready for design and implementation
     searchSpecifications: Understands natural language questions and finds relevant specifications, entities, and relationships semantically without requiring exact names
+    discoverEntities: Lists and explores entities across catalogs, filtered by layer, role, catalog, or context
+    exploreEntity: Provides detailed information about a specific entity including its purpose, properties, actions, and relationships
+    browseEntityGraph: Enables navigation through the entity relationship graph to understand system structure and dependencies
+    findRelevantEntities: Rapidly retrieves contextually relevant entities from any layer by deeply understanding question intent and matching against entity purposes, properties, actions, and relationships
+    rankByRelevance: Orders discovered entities by semantic relevance to the question context, considering both direct matches and related entities
 
 entity: ProductManager
 role: actor
@@ -46,6 +53,7 @@ actions:
     defineRequirements: Creates and maintains @ProductView for new and existing features
     createFeature: Specifies new features and user capabilities in product views
     queryExistingFeatures: Asks @NexusAssistant about existing product capabilities and implementations
+    exploreSystem: Discovers and explores entities to understand existing system structure and capabilities
 
 entity: Developer
 role: actor
@@ -61,6 +69,7 @@ actions:
     queryAssistant: Asks @NexusAssistant for system design or implementation guidance on specific features or questions
     designSystem: Creates and maintains @SystemDesignView to support product requirements
     implementFeature: Writes code to implement features based on specifications and guidance received
+    exploreSystem: Discovers and explores entities across layers to understand system architecture and dependencies
 
 entity: AIAgent
 role: actor
@@ -77,6 +86,7 @@ actions:
     manageSystemDesign: Creates and maintains @SystemDesignView to support product requirements
     requestContext: Requests @ImplementationContext from @NexusAssistant for a specific feature
     generateCode: Creates code that meets product and architectural requirements based on provided context
+    exploreSystem: Discovers and explores entities to understand system structure before generating specifications or code
 
 entity: ImplementationContext
 role: component
@@ -226,6 +236,93 @@ And finds the component that monitors file changes
 And explains the entity's purpose and file watching capability
 And shows scenarios demonstrating the file watching behavior
 
+scenario: DiscoverAllEntitiesInCatalog
+Given a user exploring an unfamiliar catalog
+When they request to see all entities in that catalog
+Then @NexusAssistant lists all entities with their roles and brief purposes
+And groups entities by layer (product, design, implementation) when relevant
+And enables further exploration of any discovered entity
+
+scenario: FilterEntitiesByContext
+Given a developer working on a specific feature area
+When they request entities related to a particular context (e.g., "authentication" or "payment processing")
+Then @NexusAssistant discovers entities semantically related to that context
+And shows entities across layers that participate in that domain
+And explains how discovered entities connect to form the feature
+
+scenario: ExploreEntityDetails
+Given a user who discovered an entity name
+When they request detailed information about that entity
+Then @NexusAssistant provides the entity's complete definition including purpose, properties, actions
+And shows relationships to other entities both incoming and outgoing
+And identifies which layer the entity belongs to
+And provides navigation to related entities for deeper exploration
+
+scenario: BrowseByLayer
+Given a user understanding the system's layered architecture
+When they browse entities by layer (product, design, or implementation)
+Then @NexusAssistant lists all entities in that layer across all catalogs
+And helps users understand the system from a specific perspective
+And enables cross-layer navigation to see how layers connect
+
+scenario: DiscoverByRole
+Given a user looking for specific types of entities
+When they filter by role (actor, service, component, module, etc.)
+Then @NexusAssistant discovers all entities with that role
+And shows how entities of that role interact within the system
+And provides context about each entity's responsibilities
+
+scenario: AccurateContextualEntityRetrieval
+Given a developer asks "What entities are involved in processing payment transactions?"
+When @NexusAssistant receives this complex contextual question
+Then it thoroughly analyzes the question to extract key concepts: "payment", "transactions", "processing"
+And searches across both @ProductView and @SystemDesignView comprehensively to ensure no relevant entities are missed
+And deeply understands entity purposes, properties, and actions to find accurate semantic matches
+And verifies semantic similarity scores meet quality thresholds to avoid false positives
+And identifies PaymentFlow in product layer, PaymentGateway in design layer, and all related entities
+And ranks results by relevance showing most contextually appropriate entities first with confidence scores
+And returns complete, accurate results optimized for speed where possible without compromising correctness
+
+scenario: DeepSemanticUnderstanding
+Given a product manager asks "Which features help users recover from errors?"
+When @NexusAssistant processes this question
+Then it understands "recover from errors" semantically (not just text matching)
+And analyzes entity purposes to find those describing error handling, validation, recovery flows
+And examines entity actions to identify retry, rollback, or recovery operations
+And considers entity relationships to find connected error management capabilities
+And returns relevant entities from multiple layers showing complete error recovery ecosystem
+And explains how each entity contributes to error recovery
+
+scenario: CrossLayerContextualSearch
+Given an @AIAgent asks "What defines and implements user authentication?"
+When @NexusAssistant interprets this question
+Then it recognizes the question spans both product definition and design implementation
+And searches @ProductView for authentication features and user flows
+And simultaneously searches @SystemDesignView for authentication components and services
+And understands the connections between product requirements and design implementations
+And returns unified results showing authentication entities from both layers
+And highlights the traceability between product features and technical components
+And enables navigation from "what" to "how" seamlessly
+
+scenario: IntelligentEntityRanking
+Given multiple entities match a search query
+When @NexusAssistant ranks the results
+Then it considers semantic similarity to the question
+And weights entities with richer purposes and more detailed actions higher
+And prioritizes entities with more relationships as they're more central to system
+And places entities from the question's target layer (if specified) at the top
+And includes related entities that might be indirectly relevant
+And presents ranked results with relevance scores explaining why each entity matched
+
+scenario: FastIterativeRefinement
+Given a user performs multiple related searches in sequence
+When @NexusAssistant handles these queries
+Then it maintains context between searches to understand evolving intent
+And caches semantic analysis to enable sub-second response times
+And learns from which results the user explores to improve relevance
+And suggests related entities based on exploration patterns
+And enables rapid, fluid discovery through intelligent suggestions
+
 rule: ContextualAccuracy
 @NexusAssistant must only provide implementation guidance that is consistent with both product requirements and architectural constraints
 
@@ -261,3 +358,27 @@ rule: RelationalImpactAnalysis
 
 rule: SemanticSearchCapability
 @NexusAssistant must support natural language queries that don't require exact entity names - searches must understand user intent, match concepts semantically, and return relevant results based on meaning rather than text matching alone
+
+rule: EntityDiscoverability
+Users must be able to discover entities without prior knowledge of entity names - @NexusAssistant must provide browsing, filtering, and exploration capabilities by catalog, layer, role, and context to enable understanding of the monitored system
+
+rule: AccuracyOverSpeed
+@NexusAssistant must prioritize accuracy and precision of results over response speed - returning the correct, most relevant entities is more important than fast responses, though both should be optimized
+
+rule: RapidSemanticRetrieval
+@NexusAssistant should return relevant entities quickly by deeply understanding question intent and semantically matching against entity purposes, properties, actions, and relationships - but speed optimizations must never compromise accuracy or completeness of results
+
+rule: DeepEntityUnderstanding
+@NexusAssistant must analyze and understand the complete semantic meaning of each entity including its purpose statements, property descriptions, action definitions, and relationships - not just entity names or keywords
+
+rule: CrossLayerSearch
+@NexusAssistant must seamlessly search across @ProductView, @SystemDesignView, and @ComponentImplementation layers simultaneously when questions span multiple perspectives, returning unified results that show connections between layers
+
+rule: IntelligentRelevanceRanking
+Search results must be ranked by contextual relevance considering semantic similarity, entity richness, relationship centrality, layer appropriateness, and indirect connections - most relevant entities must appear first with clear relevance explanations
+
+rule: CompleteCoverageOverSpeed
+When searching for relevant entities, @NexusAssistant must ensure complete coverage of all potentially relevant entities before applying performance optimizations - missing correct results is worse than slower responses
+
+rule: SemanticPrecision
+@NexusAssistant must use appropriate similarity thresholds to balance recall (finding all relevant entities) and precision (avoiding irrelevant results) - threshold tuning must prioritize avoiding false positives while maintaining good recall
