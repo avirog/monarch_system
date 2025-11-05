@@ -5,11 +5,13 @@ role: platform
 purpose:
     - Single deployable service providing specification parsing and querying
     - Contains @NexusParser, @ValidationEngine, @SpecificationStore, @KnowledgeGraph, @QueryProcessor, @APIGateway, @MCPServer, @CodeParser, and @TraceabilityMatcher
+    - Includes LLM-powered traceability components: @SemanticMatcher, @LLMReasoner, @TraceValidator, @ExplanationGenerator, @FeedbackLearner, @TraceStorage
     - Exposes REST API via @APIGateway and MCP protocol via @MCPServer
-    - Discovers implicit traceability between specifications and source code using semantic analysis
+    - Discovers implicit traceability between specifications and source code using hybrid embeddings + LLM reasoning
+    - Persists trace links to disk avoiding expensive LLM validation on every restart
 properties:
-    CloudService as deploymentModel
-    Python as runtimeEnvironment 
+    deploymentModel: CloudService
+    runtimeEnvironment: Python 
     
 
 entity: ParsedSpecification
@@ -18,14 +20,14 @@ purpose:
     - Structured representation of a parsed Nexus specification file
     - Output from @NexusParser containing all elements of a .nxs file
 properties:
-    catalogName is String, name declared in catalog statement
-    filePath is String, source file path
-    imports is collection of @ImportItem, imported module declarations
-    entities is collection of @EntityDefinition, parsed entity definitions
-    rules is collection of @NamedBlock, business rules with type rule
-    scenarios is collection of @NamedBlock, scenarios with type scenario
-    parseTimestamp is Number, when file was parsed in unix timestamp
-    specificationHash is String, content hash for change detection
+    catalogName: String, name declared in catalog statement
+    filePath: String, source file path
+    imports: collection of @ImportItem, imported module declarations
+    entities: collection of @EntityDefinition, parsed entity definitions
+    rules: collection of @NamedBlock, business rules with type rule
+    scenarios: collection of @NamedBlock, scenarios with type scenario
+    parseTimestamp: Number, when file was parsed in unix timestamp
+    specificationHash: String, content hash for change detection
 
 entity: EntityDefinition
 role: struct
@@ -33,20 +35,29 @@ purpose:
     - Represents a parsed entity from Nexus specification
     - Contains all entity metadata including role, purpose, properties, and actions
 properties:
-    entityName is String, entity identifier
-    catalog to which entity belongs
-    role is String, entity role (platform, module, component, service, actor, struct, etc)
-    purposes is collection of @NamedBlock, entity purposes with type purpose
-    properties is collection of @NamedBlock, entity properties with type property
-    actions is collection of @NamedBlock, entity actions with type action
+    entityName: String, entity identifier
+    catalog: String, the catalog to which the entity belongs
+    role: String, entity role (platform, module, component, service, actor, struct, etc)
+    purposes: collection of @NamedBlock, entity purposes with type purpose
+    properties: collection of @NamedBlock, entity properties with type property
+    actions: collection of @NamedBlock, entity actions with type action
+
+entity: ImportItem
+role: struct
+purpose:
+    - Represents an import declaration from a Nexus specification file
+    - Contains module path and optional alias
+properties:
+    modulePath: String, the qualified module path being imported
+    alias: String, optional alias name for the imported module
 
 entity: Statement
 role: struct
 purpose:
     - Atomic unit of text that may reference entities
 properties:
-    text is String, the actual text content
-    references is collection of String, referenced entity names including properties and actions (e.g., entity.property)
+    text: String, the actual text content
+    references: collection of String, referenced entity names including properties and actions (e.g., entity.property)
 
 entity: NamedBlock
 role: struct
@@ -54,9 +65,9 @@ purpose:
     - Named container for one or more statements
     - Used for purposes, properties, actions, rules, scenarios, and explicit relations
 properties:
-    name is String, identifier for the block
-    relationType is one of {purpose, property, action, rule, scenario, explicit}, what kind of block this is
-    statements is collection of @Statement, the content
+    name: String, identifier for the block
+    relationType: one of {purpose, property, action, rule, scenario, explicit}, what kind of block this is
+    statements: collection of @Statement, the content
 
 entity: Relation
 role: struct
@@ -65,9 +76,9 @@ purpose:
     - Can involve multiple entities without implied directionality
     - Derived from @NamedBlock references during parsing
 properties:
-    entities is collection of String, entity names participating in this relation
-    relationType is one of {purpose, property, action, rule, scenario, explicit}, how the entities are related
-    statement is @Statement, the statement that created this relation 
+    entities: collection of String, entity names participating in this relation
+    relationType: one of {purpose, property, action, rule, scenario, explicit}, how the entities are related
+    statement: @Statement, the statement that created this relation 
 
 rule: RelationReference
 Each @Relation that is derived from @EntityDefinition must contains that entity as one of its references 
@@ -79,7 +90,7 @@ purpose:
     - Uses @ValidationEngine to ensure syntax and semantic correctness
     - Populates @KnowledgeGraph with parsed entities, relations, rules, and scenarios
 properties:
-    parserLibrary is Lark, Python parsing library for grammar-based parsing
+    parserLibrary: Lark, Python parsing library for grammar-based parsing
 actions:
     parseFile: Reads and parses a .nxs file into @ParsedSpecification
     validateSyntax: Checks for syntax errors and returns validation results
@@ -94,11 +105,11 @@ purpose:
     - Provides millisecond-speed lookups and traversals across specifications and code using optimized in-memory indexes
     - Enables rapid entity discovery through efficient filtering by catalog, layer, and role
 properties:
-    indexingStrategy is InMemory
-    enableCrossFileLinks is Boolean, whether to link entities across different specification files, default true
-    threeLayerModel is Boolean, maintains ProductView, SystemDesignView, and ComponentImplementation separation, default true
-    codeEntities is collection of @CodeEntity, parsed code elements indexed by qualified name
-    traceLinks is collection of @TraceLink, discovered semantic relationships between specs and code
+    indexingStrategy: InMemory
+    enableCrossFileLinks: Boolean, whether to link entities across different specification files, default true
+    threeLayerModel: Boolean, maintains ProductView, SystemDesignView, and ComponentImplementation separation, default true
+    codeEntities: collection of @CodeEntity, parsed code elements indexed by qualified name
+    traceLinks: collection of @TraceLink, discovered semantic relationships between specs and code
 actions:
     addEntity: Inserts entity node with its properties and actions into graph
     addRelation: Creates typed edge between entity nodes with relation type (purpose, property, action, rule, scenario, explicit)
@@ -131,20 +142,20 @@ purpose:
     - Enables entity discovery and exploration through filtering and browsing
     - Returns query results as JSON
 properties:
-    queryLanguage is one of {Natural, Structured}
-    maxResults is Number, maximum results to return after ranking, default 10
-    semanticSearchEnabled is Boolean, enables embedding-based semantic search for natural language queries, default true
-    embeddingService is String, OpenAI API for text-embedding-3-small model, shared with @TraceabilityMatcher
-    semanticThreshold is Number, minimum cosine similarity for semantic query matches tuned to balance precision and recall, default 0.6
-    cache is @EmbeddingCache, shared cache with @TraceabilityMatcher for query embeddings
-    intentParser is LLM, uses OpenAI chat completion for natural language query understanding with structured output, falls back to regex patterns if LLM unavailable
-    llmModel is String, model for query intent parsing, default gpt-4o-mini
-    vectorStore is collection, pre-indexed entity embeddings from @TraceabilityMatcher enabling fast similarity search
-    rankingWeights is struct, configurable weights for ranking factors tuned for accuracy (similarity 0.5, richness 0.2, centrality 0.2, layer_match 0.1)
-    parallelSearchEnabled is Boolean, enables concurrent search across multiple layers without compromising completeness, default true
-    queryContextCache is collection, maintains recent query context for iterative refinement
-    minConfidenceScore is Number, minimum composite confidence score for result inclusion ensuring quality, default 0.3
-    exhaustiveSearch is Boolean, when true searches all entities before filtering ensuring no relevant results missed, default true
+    queryLanguage: one of {Natural, Structured}
+    maxResults: Number, maximum results to return after ranking, default 10
+    semanticSearchEnabled: Boolean, enables embedding-based semantic search for natural language queries, default true
+    embeddingService: String, OpenAI API for text-embedding-3-small model, shared with @TraceabilityMatcher
+    semanticThreshold: Number, minimum cosine similarity for semantic query matches tuned to balance precision and recall, default 0.6
+    cache: @EmbeddingCache, shared cache with @TraceabilityMatcher for query embeddings
+    intentParser: LLM, uses OpenAI chat completion for natural language query understanding with structured output, falls back to regex patterns if LLM unavailable
+    llmModel: String, model for query intent parsing, default gpt-4o-mini
+    vectorStore: collection, pre-indexed entity embeddings from @TraceabilityMatcher enabling fast similarity search
+    rankingWeights: struct, configurable weights for ranking factors tuned for accuracy (similarity 0.5, richness 0.2, centrality 0.2, layer_match 0.1)
+    parallelSearchEnabled: Boolean, enables concurrent search across multiple layers without compromising completeness, default true
+    queryContextCache: collection, maintains recent query context for iterative refinement
+    minConfidenceScore: Number, minimum composite confidence score for result inclusion ensuring quality, default 0.3
+    exhaustiveSearch: Boolean, when true searches all entities before filtering ensuring no relevant results missed, default true
 actions:
     parseQuery: Extracts intent and entities from user query using @intentParser LLM with regex fallback, returns structured QueryIntent with query_type, entity_names, layer filters, and parameters
     determineScope: Identifies which specification layers to search based on query context
@@ -169,8 +180,8 @@ purpose:
     - Reads Nexus specification files from filesystem
     - Watches for file changes and triggers @NexusParser to re-parse modified files
 properties:
-    storageType is FileSystem
-    watchForChanges is Boolean, default true
+    storageType: FileSystem
+    watchForChanges: Boolean, default true
 actions:
     loadSpecification: Reads specification from filesystem
     watchFile: Monitors file for changes
@@ -182,7 +193,7 @@ purpose:
     - Exposes REST API for external integrations
     - Routes requests to @QueryProcessor
 properties:
-    authenticationRequired is Boolean, default false
+    authenticationRequired: Boolean, default false
 actions:
     handleRequest: Processes incoming API request
     routeToService: Forwards to @QueryProcessor
@@ -195,9 +206,9 @@ purpose:
     - Exposes @QueryProcessor capabilities through MCP protocol including entity discovery and exploration
     - Enables both internal and external AI agents to query specifications and discover system structure
 properties:
-    protocolVersion is String, MCP protocol version supported, default 1.0
-    transportType is one of {stdio, http}, communication transport mechanism, default stdio
-    toolsEnabled is Boolean, whether to expose MCP tools, default true
+    protocolVersion: String, MCP protocol version supported, default 1.0
+    transportType: one of {stdio, http}, communication transport mechanism, default stdio
+    toolsEnabled: Boolean, whether to expose MCP tools, default true
 actions:
     handleMCPRequest: Processes incoming MCP protocol request
     exposeTool: Registers @QueryProcessor operations as MCP tools including discoverEntities, exploreEntity, and browseEntityGraph
@@ -210,7 +221,7 @@ purpose:
     - Ensures referenced entities exist
     - Checks relation cardinality constraints
 properties:
-    strictMode is Boolean, enforce all rules strictly, default true
+    strictMode: Boolean, enforce all rules strictly, default true
 actions:
     validateEntity: Checks entity definition correctness
     validateReferences: Ensures all referenced entities exist
@@ -224,16 +235,16 @@ purpose:
     - Extracted from source code by @CodeParser using AST parsing
     - Contains semantic information for embedding generation by @TraceabilityMatcher
 properties:
-    entityType is one of {file, class, function, module}, type of code element
-    qualifiedName is String, fully qualified identifier (e.g., "payment.gateway.PaymentService.process_payment")
-    filePath is String, absolute path to source file
-    startLine is Number, beginning line number in file
-    endLine is Number, ending line number in file
-    sourceCode is String, actual implementation code
-    docstring is String, extracted documentation or comments, may be empty
-    language is String, programming language (python, typescript, etc)
-    parentContext is String, parent class or module name for context
-    signature is String, function/method signature including parameters
+    entityType: one of {file, class, function, module}, type of code element
+    qualifiedName: String, fully qualified identifier (e.g., "payment.gateway.PaymentService.process_payment")
+    filePath: String, absolute path to source file
+    startLine: Number, beginning line number in file
+    endLine: Number, ending line number in file
+    sourceCode: String, actual implementation code
+    docstring: String, extracted documentation or comments, may be empty
+    language: String, programming language (python, typescript, etc)
+    parentContext: String, parent class or module name for context
+    signature: String, function/method signature including parameters
 
 entity: ParsedCodeRepository
 role: struct
@@ -242,12 +253,12 @@ purpose:
     - Output from @CodeParser after scanning codebase
     - Stored in @KnowledgeGraph alongside specification entities
 properties:
-    repositoryPath is String, root directory of code repository
-    language is String, primary programming language
-    entities is collection of @CodeEntity, all parsed code elements
-    fileIndex is collection of String, paths of files that were parsed
-    parseTimestamp is Number, when repository was last parsed
-    contentHash is String, hash of repository state for change detection
+    repositoryPath: String, root directory of code repository
+    language: String, primary programming language
+    entities: collection of @CodeEntity, all parsed code elements
+    fileIndex: collection of String, paths of files that were parsed
+    parseTimestamp: Number, when repository was last parsed
+    contentHash: String, hash of repository state for change detection
 
 entity: CodeParser
 role: component
@@ -257,9 +268,9 @@ purpose:
     - Enriches entities with contextual information for better semantic matching
     - Filters out trivial or private elements that shouldn't be traced
 properties:
-    language is String, target programming language
-    astParser is component, language-specific parser (ast module for Python, ts-morph for TypeScript)
-    granularity is one of {function, class, file}, parsing level, default function
+    language: String, target programming language
+    astParser: component, language-specific parser (ast module for Python, ts-morph for TypeScript)
+    granularity: one of {function, class, file}, parsing level, default function
 actions:
     parseFile: Parses single file into collection of @CodeEntity objects
     parseRepository: Scans entire repository and returns @ParsedCodeRepository
@@ -272,44 +283,72 @@ role: struct
 purpose:
     - Represents discovered semantic relationship between any two entities across layers
     - Supports product-to-design, design-to-implementation, implementation-to-code, and all reverse directions
-    - Created by @TraceabilityMatcher through embedding similarity analysis
+    - Created by @TraceabilityMatcher through hybrid approach combining embedding similarity and LLM reasoning
+    - Includes human-readable explanation generated by @LLMReasoner for why the connection exists
     - Stored in @KnowledgeGraph to enable bidirectional tracing across all layers
 properties:
-    sourceQualifiedName is String, source entity identifier (e.g., "NexusAssistant.PaymentFlow")
-    sourceLayer is one of {product, design, implementation, code}, source layer
-    targetQualifiedName is String, target entity identifier (e.g., "PaymentDesign.PaymentGateway" or "payment.gateway.PaymentService")
-    targetLayer is one of {product, design, implementation, code}, target layer
-    confidence is Number, cosine similarity score between 0.0 and 1.0
-    rationale is String, human-readable explanation of why entities are related
-    direction is one of {forward, backward}, tracing direction relative to product-to-code flow
-    discoveredTimestamp is Number, when link was generated
-    embeddingModel is String, model used for semantic matching
+    sourceQualifiedName: String, source entity identifier (e.g., "NexusAssistant.PaymentFlow")
+    sourceLayer: one of {product, design, implementation, code}, source layer
+    targetQualifiedName: String, target entity identifier (e.g., "PaymentDesign.PaymentGateway" or "payment.gateway.PaymentService")
+    targetLayer: one of {product, design, implementation, code}, target layer
+    confidence: Number, composite confidence score between 0.0 and 1.0 combining semantic similarity and LLM validation
+    embeddingSimilarity: Number, raw cosine similarity score from embedding comparison
+    llmConfidence: Number, LLM reasoning confidence score for this connection
+    rationale: String, human-readable explanation generated by @LLMReasoner explaining why entities are related and how they connect
+    validationStatus: one of {validated, candidate, rejected}, LLM validation outcome
+    direction: one of {forward, backward}, tracing direction relative to product-to-code flow
+    discoveredTimestamp: Number, when link was generated
+    embeddingModel: String, model used for semantic matching
+    llmModel: String, LLM model used for validation and explanation
 
 entity: TraceabilityMatcher
 role: component
 purpose:
-    - Discovers implicit semantic relationships across all layers (product, design, implementation, code)
-    - Generates rich embeddings for specification entities by indexing complete purpose statements, property descriptions, and action definitions
-    - Creates semantic representations capturing deep entity meaning for precise contextual matching
-    - Uses vector similarity search to find related entities following traceability rules
+    - Discovers implicit semantic relationships across all layers using hybrid approach combining embeddings and LLM reasoning
+    - Uses @ContextEnricher to generate rich, comprehensive entity summaries including related entities and layer semantics before embedding
+    - Generates embeddings from enriched context capturing complete architectural understanding not just isolated descriptions
+    - Uses @SemanticMatcher for fast embedding-based candidate generation
+    - Applies @LLMReasoner with enriched entity context to validate candidates and discover non-obvious connections that embeddings miss
+    - Generates human-readable explanations for trace links via @ExplanationGenerator
+    - Resolves ambiguities when multiple entities appear similar using LLM contextual understanding
+    - Discovers multi-hop trace paths through relationship chains that direct similarity cannot find
+    - Learns from user feedback through @FeedbackLearner to continuously improve trace quality
+    - Persists discovered trace links via @TraceStorage for instant loading on restart
     - Populates shared vectorStore enabling @QueryProcessor to perform rapid semantic queries
-    - Stores discovered @TraceLink objects in @KnowledgeGraph
+    - Stores discovered @TraceLink objects with confidence scores and explanations in @KnowledgeGraph
     - Maintains flexible traceability: product→design (required), design→implementation or design→code (alternative paths), implementation→code
 properties:
-    embeddingService is String, OpenAI API for text-embedding-3-small model
-    embeddingDimensions is Number, vector size, 1536 for text-embedding-3-small
-    similarityThreshold is Number, minimum cosine similarity for valid trace link, default 0.7
-    cache is @EmbeddingCache, content-based caching to avoid redundant API calls
-    vectorStore is collection, stores embeddings indexed by qualified name and layer
+    contextEnricher: @ContextEnricher, enriches entity context before embedding generation and LLM validation
+    semanticMatcher: @SemanticMatcher, embedding-based similarity matching for candidate generation
+    llmReasoner: @LLMReasoner, validates candidates and discovers non-obvious connections
+    traceValidator: @TraceValidator, scores confidence using multiple quality signals
+    explanationGenerator: @ExplanationGenerator, creates human-readable rationales for trace links
+    feedbackLearner: @FeedbackLearner, learns from user validation to improve discovery
+    traceStorage: @TraceStorage, persists trace links to disk with change detection
+    embeddingService: String, OpenAI API for text-embedding-3-small model
+    embeddingDimensions: Number, vector size, 1536 for text-embedding-3-small
+    embeddingSimilarityThreshold: Number, minimum cosine similarity for candidate generation, default 0.6
+    llmConfidenceThreshold: Number, minimum LLM confidence for validated trace link, default 0.7
+    llmModel: String, LLM for validation and reasoning, default gpt-4o-mini
+    cache: @EmbeddingCache, content-based caching to avoid redundant API calls
+    vectorStore: collection, stores embeddings indexed by qualified name and layer
+    feedbackStore: collection, stores user validation history for learning
+    contentHashes: collection, tracks entity content hashes for cache invalidation
 actions:
     generateEmbedding: Calls embedding service to create vector representation of text
-    indexSpecEntity: Creates rich embedding for specification entity by concatenating complete purpose statements, all property descriptions with types, and all action definitions into semantic summary, then generating embedding capturing full entity meaning
-    indexCodeEntity: Creates embedding for @CodeEntity using code, docstring, and context
-    findSimilarEntities: Performs cosine similarity search in vector store filtered by valid target layers
-    createTraceLink: Generates @TraceLink with confidence score and rationale
-    discoverLayerLinks: Discovers links following valid layer transitions (product→design, design→implementation, design→code, implementation→code)
-    discoverAllLinks: Indexes all entities and discovers trace links across all layers following layered traceability rules
-    populateVectorStore: Builds optimized vectorStore index for @QueryProcessor with all entity embeddings organized by layer and catalog for fast filtered search
+    indexSpecEntity: Uses @ContextEnricher to gather complete entity context with related entities and layer semantics, then creates rich embedding from enriched summary
+    indexCodeEntity: Uses @ContextEnricher to gather code entity context including parent information and related specifications, then creates embedding from enriched summary
+    findCandidates: Uses @SemanticMatcher to find candidate matches above embedding similarity threshold
+    validateCandidate: Uses @ContextEnricher to get full enriched context for both entities, then applies @LLMReasoner to confirm if candidate trace link is valid
+    disambiguateCandidates: Uses @LLMReasoner to resolve ambiguity when multiple entities have similar embeddings
+    reasonAboutIndirectLinks: Uses @LLMReasoner to follow relationship chains and discover multi-hop connections
+    generateExplanation: Calls @ExplanationGenerator to create rationale for trace link
+    scoreConfidence: Uses @TraceValidator to compute composite confidence from embedding similarity and LLM validation
+    createTraceLink: Generates @TraceLink with confidence score, validation status, and human-readable rationale
+    discoverLayerLinks: Discovers links following valid layer transitions using hybrid embedding + LLM approach with enriched entity context
+    discoverAllLinks: Checks @TraceStorage cache validity, loads cached trace links if entities unchanged, otherwise indexes all entities using enriched context and discovers trace links across all layers with LLM validation then saves to cache
+    processFeedback: Records user validation decisions through @FeedbackLearner to improve future discovery
+    populateVectorStore: Builds optimized vectorStore index for @QueryProcessor with all entity embeddings organized by layer and catalog
 
 entity: EmbeddingCache
 role: component
@@ -318,14 +357,159 @@ purpose:
     - Implements full file reindex strategy with content-based caching for efficiency
     - Stores cache in memory with optional persistence to disk
 properties:
-    storageType is one of {memory, disk}, cache storage mechanism, default memory
-    maxCacheSize is Number, maximum cached embeddings, default 10000
-    cachePath is String, file path for persistent cache, used when storageType is disk
+    storageType: one of {memory, disk}, cache storage mechanism, default memory
+    maxCacheSize: Number, maximum cached embeddings, default 10000
+    cachePath: String, file path for persistent cache, used when storageType is disk
 actions:
     getOrGenerate: Returns cached embedding if content unchanged, generates new one otherwise
     computeContentHash: Generates SHA256 hash of entity content for cache key
     invalidate: Removes cached embedding when source content changes
     persist: Writes in-memory cache to disk for persistence across restarts
+
+entity: SemanticMatcher
+role: component
+purpose:
+    - Provides fast embedding-based similarity matching as first stage of trace discovery
+    - Generates candidate trace links for @TraceabilityMatcher validation
+    - Uses vector search to find entities above similarity threshold
+properties:
+    vectorStore: collection, indexed embeddings organized by layer
+    candidateThreshold: Number, minimum similarity for candidate generation, default 0.6
+actions:
+    findSimilarEntities: Performs cosine similarity search filtered by valid target layers
+    generateCandidates: Returns list of potential trace links above threshold with raw similarity scores
+
+entity: LLMReasoner
+role: component
+purpose:
+    - Applies large language model reasoning to validate trace links and discover non-obvious connections
+    - Understands context, intent, and logical relationships beyond embedding similarity
+    - Uses layer semantics from @LayerSemantics to understand what each layer represents and expected transition patterns
+    - Analyzes enriched entity context including purposes, properties, actions, related entities, and code behavior for validation
+    - Follows chains of relationships to discover indirect multi-hop connections
+properties:
+    llmService: String, OpenAI API for chat completions
+    llmModel: String, model for reasoning, default gpt-4o-mini
+    layerSemantics: @LayerSemantics, provides layer descriptions and transition semantics for validation prompts
+    validationPromptTemplate: String, structured prompt for trace validation including layer semantics
+    reasoningTemperature: Number, LLM temperature for deterministic reasoning, default 0.1
+    maxReasoningTokens: Number, token limit for LLM responses, default 500
+actions:
+    validateTraceLink: Analyzes enriched specification and code/spec context with layer semantics to confirm if candidate link is valid
+    explainConnection: Generates detailed reasoning about why entities are related considering layer meanings
+    disambiguateEntities: Determines correct match when multiple candidates have similar embeddings using layer-aware reasoning
+    discoverIndirectLinks: Follows relationship chains to find multi-hop trace paths
+    reasonAboutBehavior: Analyzes code logic flow to match against specification intent
+    buildValidationPrompt: Constructs LLM prompt including enriched entity context and layer transition semantics
+
+entity: TraceValidator
+role: component
+purpose:
+    - Scores trace link confidence based on multiple quality signals
+    - Identifies high-confidence traces and flags uncertain connections for review
+    - Combines embedding similarity with LLM validation scores
+properties:
+    embeddingWeight: Number, weight for embedding similarity score, default 0.4
+    llmWeight: Number, weight for LLM confidence score, default 0.6
+    minCompositeConfidence: Number, minimum score for trace acceptance, default 0.7
+actions:
+    computeConfidence: Calculates weighted composite score from embedding and LLM signals
+    assessQuality: Evaluates trace link against quality criteria
+    flagForReview: Identifies low-confidence traces needing human validation
+    categorizeConfidence: Assigns confidence level (high, medium, low) based on thresholds
+
+entity: ExplanationGenerator
+role: component
+purpose:
+    - Creates human-readable justifications explaining why trace links exist
+    - Helps developers understand traceability rationale, not just see connections
+    - Generates context-aware explanations based on entity semantics and LLM reasoning
+properties:
+    llmService: String, OpenAI API for explanation generation
+    llmModel: String, model for natural language generation, default gpt-4o-mini
+    explanationTemplate: String, template for structured rationale generation
+    maxExplanationLength: Number, character limit for explanations, default 500
+actions:
+    generateRationale: Creates explanation describing why specification connects to code
+    describeConnection: Explains how entities relate based on purposes, properties, and actions
+    formatExplanation: Structures rationale in readable format with key evidence points
+
+entity: ContextEnricher
+role: component
+purpose:
+    - Enriches entity context by gathering related entities and architectural information from @KnowledgeGraph
+    - Generates layer-specific semantic context explaining what each layer represents
+    - Creates comprehensive entity summaries including relationships and architectural role
+    - Provides enriched context for both embedding generation and LLM validation
+properties:
+    knowledgeGraph: @KnowledgeGraph, reference to knowledge graph for retrieving related entities
+    layerSemantics: @LayerSemantics, provides layer descriptions and transition semantics
+    maxRelatedEntities: Number, maximum number of related entities to include, default 5
+    includeRelationships: Boolean, whether to include entity relationships in enriched context, default true
+    relationshipDepth: Number, how many hops to traverse for related entities, default 1
+actions:
+    enrichSpecEntity: Gathers complete context for specification entity including purposes, properties, actions, related entities, layer semantics, and architectural role
+    enrichCodeEntity: Gathers complete context for code entity including docstring, signature, parent context, file location, and related specifications if available
+    getLayerSemantics: Retrieves layer description and semantics from @LayerSemantics for specific layer
+    getRelatedEntityContext: Queries @KnowledgeGraph to get related entities and their relationship types
+    formatEnrichedSummary: Structures enriched context into text format suitable for embedding or LLM consumption
+
+entity: LayerSemantics
+role: component
+purpose:
+    - Provides semantic descriptions of what each layer represents in the system
+    - Defines valid layer transitions and what they mean
+    - Supplies validation criteria specific to each layer transition type
+    - Used by @ContextEnricher and @LLMReasoner to understand layer semantics
+properties:
+    layerDescriptions: collection, maps layer names to semantic descriptions explaining what each layer represents
+    transitionTemplates: collection, describes expected relationships between each valid layer pair
+    validationCriteria: collection, layer-specific criteria for validating trace links
+    validTransitions: collection, defines which layer transitions are valid (product→design, design→implementation, design→code, implementation→code)
+actions:
+    getLayerDescription: Returns semantic description of what a specific layer represents
+    getTransitionSemantics: Returns description of expected relationship between source and target layers
+    getValidationCriteria: Returns criteria for validating trace links for specific layer transition
+    isValidTransition: Checks if transition between two layers is valid
+
+entity: FeedbackLearner
+role: component
+purpose:
+    - Learns from user feedback to continuously improve trace discovery accuracy
+    - Stores validation decisions and adapts reasoning patterns
+    - Reduces false positives over time without manual retraining
+properties:
+    feedbackStore: collection, stores user validation history with context
+    learningEnabled: Boolean, enables adaptive improvement, default true
+    feedbackWeight: Number, influence of feedback on future decisions, default 0.2
+actions:
+    recordFeedback: Stores user validation decision (correct, incorrect, uncertain) with trace context
+    analyzeFeedback: Identifies patterns in validated vs rejected traces
+    adaptThresholds: Adjusts confidence thresholds based on feedback patterns
+    updateReasoningPatterns: Refines LLM prompts based on what makes good traces
+    generateInsights: Reports on trace quality improvements from learning
+
+entity: TraceStorage
+role: component
+purpose:
+    - Persists discovered @TraceLink objects to disk for instant loading on restart
+    - Tracks SHA256 content hashes of entity summaries to detect specification or code changes
+    - Invalidates entire trace link cache when any entity is added, removed, or modified triggering full re-discovery
+    - Eliminates expensive LLM validation re-runs when nothing has changed
+    - Works with @EmbeddingCache which retains embeddings for unchanged entities enabling efficient re-discovery
+    - Stores cache in .trace_cache directory with JSON serialization
+properties:
+    storagePath: String, directory for cache files, default .trace_cache
+    traceLinksFile: String, JSON file for serialized @TraceLink collection
+    contentHashesFile: String, JSON file storing entity content hashes for change detection
+    enabled: Boolean, enables trace link persistence, default true
+actions:
+    saveTraceLinks: Persists collection of @TraceLink objects with entity content hashes to disk
+    loadTraceLinks: Loads cached trace links and content hashes from disk if files exist
+    isCacheValid: Compares current entity content hashes against cached hashes to detect changes
+    computeEntityHash: Generates SHA256 hash of entity summary for change detection
+    clearCache: Removes all cached trace links and content hashes
+    getCacheStats: Returns statistics about cached trace links including count and file size
 
 
 scenario: DiscoverEntitiesInCatalog
@@ -466,26 +650,95 @@ For each file, @CodeParser extracts classes and functions into @CodeEntity objec
 @CodeParser enriches entities with parent context and filters out trivial/private functions.
 @ParsedCodeRepository is created with all @CodeEntity objects and stored in @KnowledgeGraph.
 
-scenario: TraceabilityDiscovery
-After specifications and code are loaded into @KnowledgeGraph, @TraceabilityMatcher begins discovery.
-For each specification entity in each layer, @TraceabilityMatcher generates semantic embedding using OpenAI API.
+scenario: EnrichedEmbeddingGeneration
+@TraceabilityMatcher begins indexing a specification entity from design layer.
+@TraceabilityMatcher calls @ContextEnricher enrichSpecEntity with entity, catalog, layer, and @KnowledgeGraph.
+@ContextEnricher calls @LayerSemantics getLayerDescription("design") receiving: "Describes HOW the system is organized, technical architecture, services, components".
+@ContextEnricher calls @KnowledgeGraph getRelations for entity retrieving all connected entities with relationship types.
+@ContextEnricher identifies 3 related entities: dependencies on 2 other services and composition of 1 data structure.
+@ContextEnricher formats enriched summary including: layer semantics explanation, complete entity purpose, all properties with descriptions, all actions with descriptions, related entities with relationship context, architectural role in system.
+@TraceabilityMatcher receives enriched summary from @ContextEnricher (significantly richer than simple entity text).
+@TraceabilityMatcher generates embedding for enriched summary capturing full architectural context.
+Embedding now encodes: what layer means, entity's complete semantics, relationships to other entities, architectural role.
+When compared to code entity embeddings, similarity matching captures semantic connections that simple descriptions miss.
+
+scenario: LLMEnhancedTraceabilityDiscovery
+After specifications and code are loaded into @KnowledgeGraph, @TraceabilityMatcher begins hybrid discovery process.
+For each specification entity in each layer, @TraceabilityMatcher uses @ContextEnricher to create enriched summary then generates embedding using OpenAI API.
 @EmbeddingCache checks if embedding already exists for this content hash, returns cached or generates new.
-For each @CodeEntity, @TraceabilityMatcher creates contextual summary and generates embedding.
-@TraceabilityMatcher computes cosine similarity following valid layer transitions:
+For each @CodeEntity, @TraceabilityMatcher uses @ContextEnricher to create enriched code summary then generates embedding.
+@SemanticMatcher performs cosine similarity search following valid layer transitions to generate candidates:
     - Product layer entities compared to design layer entities (always)
     - Design layer entities compared to both implementation layer entities AND code entities (alternative paths)
     - Implementation layer entities compared to code entities (when implementation specs exist)
-When similarity exceeds threshold (default 0.7), @TraceLink is created with confidence score and direction.
-All @TraceLink objects are stored in @KnowledgeGraph enabling full chain traceability with flexible paths.
-@QueryProcessor can traverse multiple @TraceLink objects to trace from product requirement through design to either implementation specs or directly to code.
+Candidates above embeddingSimilarityThreshold (default 0.6) are passed to @LLMReasoner for validation.
+@LLMReasoner analyzes each candidate by reading full specification purposes, properties, actions, and code context.
+@LLMReasoner validates if semantic connection is logically sound or discovers why embeddings found false positive.
+@LLMReasoner identifies additional connections through multi-hop reasoning that embeddings missed.
+@ExplanationGenerator creates human-readable rationale for each validated trace explaining the connection.
+@TraceValidator computes composite confidence score (0.4 * embedding_similarity + 0.6 * llm_confidence).
+When composite confidence exceeds threshold (default 0.7), @TraceLink is created with validation status and explanation.
+All @TraceLink objects stored in @KnowledgeGraph with confidence scores, rationales, and validation status.
+@QueryProcessor can traverse @TraceLink objects to trace across layers with explainable connections users can trust.
+
+scenario: DisambiguatingMultipleCandidates
+@TraceabilityMatcher discovers three design entities with similar embeddings (0.72, 0.71, 0.70) to PaymentService code.
+@SemanticMatcher generates all three as candidates: PaymentGateway, PaymentProcessor, PaymentValidator.
+@LLMReasoner receives candidates with full specification contexts and PaymentService code.
+@LLMReasoner analyzes PaymentService code behavior: processes transactions, validates cards, handles errors.
+@LLMReasoner examines each specification's purpose and actions for logical match.
+@LLMReasoner determines PaymentGateway (external integration focus) best matches code's transaction processing.
+@LLMReasoner rejects PaymentProcessor (internal logic orchestration) and PaymentValidator (validation only).
+@ExplanationGenerator creates rationale: "PaymentService implements PaymentGateway because code handles external API calls, matches gateway's process action, and manages transaction lifecycle as specified."
+@TraceValidator computes high LLM confidence (0.85) despite similar embedding scores.
+@TraceLink created for PaymentGateway→PaymentService with composite confidence 0.79 and clear explanation.
+False positives prevented - developers see correct, explainable trace link.
+
+scenario: DiscoveringIndirectLinks
+Product requirement UserAuthentication doesn't mention specific implementation details.
+@SemanticMatcher finds low embedding similarity (0.58) to auth_handler.py code, below candidate threshold.
+@LLMReasoner examines UserAuthentication relationships in @KnowledgeGraph.
+@LLMReasoner finds UserAuthentication traces to AuthService design entity (high confidence).
+@LLMReasoner analyzes AuthService specification and finds strong semantic match to auth_handler.py.
+@LLMReasoner reasons through chain: UserAuthentication→AuthService→auth_handler.py.
+@TraceabilityMatcher creates multi-hop @TraceLink path with explanations at each step.
+@ExplanationGenerator describes full chain rationale showing how product requirement flows through design to code.
+Developer queries UserAuthentication and sees complete implementation path despite no direct similarity.
+Multi-hop reasoning reveals connections pure embedding search cannot find.
+
+scenario: ExplainingTraceRationale
+Developer views trace link from PaymentFlow specification to payment_processor.py code.
+Developer requests explanation for why this connection exists.
+@QueryProcessor retrieves @TraceLink from @KnowledgeGraph including stored rationale.
+Rationale generated by @ExplanationGenerator during discovery explains:
+    "payment_processor.py implements PaymentFlow specification because:
+    1. Code's process_payment function fulfills PaymentFlow's processTransaction action
+    2. Error handling in code matches PaymentFlow's recovery requirements
+    3. Code validates payment methods as specified in PaymentFlow properties
+    4. Transaction state management aligns with PaymentFlow's flow semantics
+    Confidence: 0.83 (embedding: 0.74, LLM validation: 0.89)"
+Developer understands traceability rationale and trusts the connection.
+Explanation enables informed decisions about code changes and their impact on requirements.
+
+scenario: LearningFromFeedback
+Developer reviews discovered trace links and validates 20 connections.
+Developer confirms 15 as correct, rejects 3 as false positives, marks 2 as uncertain.
+For each decision, developer provides context through @FeedbackLearner interface.
+@FeedbackLearner stores validated traces with full context in feedbackStore.
+@FeedbackLearner analyzes rejected traces to identify common patterns leading to false positives.
+@FeedbackLearner adjusts embeddingSimilarityThreshold from 0.6 to 0.65 for this project.
+@FeedbackLearner updates LLM validation prompts to emphasize patterns from correct traces.
+Next discovery iteration shows improved precision: fewer false positives, maintained recall.
+@TraceabilityMatcher continuously improves without manual retraining or threshold tuning.
+System adapts to project-specific patterns and terminology over time.
 
 scenario: ForwardTracing
 Developer queries "what code implements PaymentGateway specification?"
 @QueryProcessor identifies PaymentGateway entity in @KnowledgeGraph design layer.
 @QueryProcessor calls getTraceLinks with forward direction to find code implementations.
-@KnowledgeGraph returns @TraceLink objects pointing to @CodeEntity objects.
+@KnowledgeGraph returns @TraceLink objects pointing to @CodeEntity objects with confidence scores and explanations.
 @QueryProcessor retrieves full @CodeEntity details including file paths and line numbers.
-Results returned as JSON showing matched code with confidence scores and rationale.
+Results returned as JSON showing matched code with confidence scores, validation status, and human-readable rationales.
 
 scenario: BackwardTracing
 Developer views payment_service.py file and queries "why does this code exist?"
@@ -630,3 +883,30 @@ rule: ExhaustiveSearchDefault
 
 rule: ThresholdTuning
 Similarity thresholds must be tuned to favor recall (finding all relevant entities) while maintaining acceptable precision - missing relevant entities is more harmful than including some less relevant ones that can be filtered through ranking
+
+rule: HybridTraceDiscovery
+@TraceabilityMatcher must combine embedding-based similarity with LLM reasoning - embeddings generate candidates quickly, LLM validates and enriches with contextual understanding - neither approach alone is sufficient for accurate, trustworthy traceability
+
+rule: ExplainableTraceLinks
+Every @TraceLink must include human-readable rationale generated by @ExplanationGenerator explaining why the connection exists, which specification requirements the code fulfills, and how behaviors align - developers must understand traceability logic, not just see connections
+
+rule: ConfidenceTransparency
+@TraceLink objects must expose both embedding similarity and LLM confidence scores separately, plus composite confidence - users see how each component contributed to the decision enabling informed trust and focused review of uncertain traces
+
+rule: LLMValidationRequired
+All candidate trace links above embedding similarity threshold must be validated by @LLMReasoner before acceptance - LLM analyzes full entity context including purposes, properties, actions, code behavior, and relationships to confirm logical soundness and filter false positives
+
+rule: MultiHopReasoning
+@LLMReasoner must be capable of following relationship chains in @KnowledgeGraph to discover indirect trace links across multiple hops - enables tracing product→design→implementation→code even when direct similarity between product and code is low
+
+rule: AmbiguityResolution
+When @SemanticMatcher generates multiple candidates with similar embedding scores, @LLMReasoner must analyze full context to disambiguate and select correct connection - prevents false trace links from misleading developers about implementation relationships
+
+rule: ContinuousLearning
+@FeedbackLearner must record all user validation decisions and adapt @TraceabilityMatcher behavior without manual retraining - adjusts thresholds, refines LLM prompts, and learns project-specific patterns to continuously improve trace quality over time
+
+rule: CompositeConfidenceScoring
+@TraceValidator must combine embedding similarity (default weight 0.4) and LLM validation confidence (default weight 0.6) into composite score - LLM reasoning weighted higher because it validates logical correctness while embeddings only measure semantic similarity
+
+rule: ValidationStatusTracking
+@TraceLink objects must include validationStatus field indicating whether link is validated (LLM confirmed), candidate (embedding-based only), or rejected (LLM invalidated) - enables different treatment and visualization of trace link confidence levels

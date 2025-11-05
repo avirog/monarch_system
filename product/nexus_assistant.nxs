@@ -15,29 +15,27 @@ purpose:
     - Reduces miscommunication between product vision, system design and technical execution
 
 properties:
-    productView is @ProductView, collection of product-level views managed by the assistant
-    systemDesignView is @SystemDesignView, collection of system design views managed by the assistant
-    componentImplementations is @ComponentImplementation, collection of component-level implementations managed by the assistant
-    mcpInterface is @MCPServerInterface, protocol interface for external AI agent access
+    productView: @ProductView, collection of product-level views managed by the assistant
+    systemDesignView: @SystemDesignView, collection of system design views managed by the assistant
+    componentImplementations: @ComponentImplementation, collection of component-level implementations managed by the assistant
+    traceEngine: @IntelligentTraceEngine, intelligent traceability engine combining embeddings and LLM reasoning
+    mcpInterface: @MCPServerInterface, protocol interface for external AI agent access
 
 actions:
     provideImplementationContext: Generates @ImplementationContext on-demand by synthesizing product requirements and architectural decisions for specific implementation needs
     analyzeSpecifications: Examines @ProductView and @SystemDesignView to identify gaps, conflicts, or missing details
-    traceRequirement: Traces a requirement from @ProductView through @SystemDesignView to @ComponentImplementation and actual source code
-    findImplementingCode: Shows which source code files and functions implement a given specification
-    findSpecificationForCode: Shows which product requirements and design specs explain why given code exists (traces backward through layers)
-    navigateLayers: Provides context following the layered flow: product requirements → design specifications → implementation details
+    traceRequirement: Uses @IntelligentTraceEngine to trace requirements bidirectionally - from @ProductView through @SystemDesignView to code, or backward from code to product value
     identifyRelatedEntities: Determines which entities may be affected by changes or are important in a given context
-    assessCoverage: Reports which requirements have been implemented and which remain as gaps
+    assessCoverage: Reports which requirements have been implemented, validates trace quality with confidence scores, and highlights gaps needing review
     manageRequirements: Helps organize, track, and maintain @ProductView for product managers
     manageSystemDesign: Helps organize, track, and maintain @SystemDesignView for developers
     validateFeatureReadiness: Checks if new feature specifications are complete and ready for design and implementation
-    searchSpecifications: Understands natural language questions and finds relevant specifications, entities, and relationships semantically without requiring exact names
+    searchSpecifications: Semantically finds relevant entities from any layer by deeply understanding question intent and matching against purposes, properties, actions, and relationships
     discoverEntities: Lists and explores entities across catalogs, filtered by layer, role, catalog, or context
     exploreEntity: Provides detailed information about a specific entity including its purpose, properties, actions, and relationships
     browseEntityGraph: Enables navigation through the entity relationship graph to understand system structure and dependencies
-    findRelevantEntities: Rapidly retrieves contextually relevant entities from any layer by deeply understanding question intent and matching against entity purposes, properties, actions, and relationships
-    rankByRelevance: Orders discovered entities by semantic relevance to the question context, considering both direct matches and related entities
+    explainTraceRationale: Provides detailed explanation of why a trace link exists using @IntelligentTraceEngine to generate human-readable justifications
+    resolveAmbiguousTraces: Uses @IntelligentTraceEngine LLM reasoning to clarify which specification truly connects to which code when similarity alone is insufficient
 
 entity: ProductManager
 role: actor
@@ -47,7 +45,7 @@ purpose:
     - Needs support to ensure specifications are complete and aligned with existing system
 
 properties:
-    assistant is @NexusAssistant, the assistant service used for requirements management
+    assistant: @NexusAssistant, the assistant service used for requirements management
 
 actions:
     defineRequirements: Creates and maintains @ProductView for new and existing features
@@ -63,7 +61,7 @@ purpose:
     - Requires clear, actionable guidance on how to translate product requirements into system design and code
 
 properties:
-    assistant is @NexusAssistant, the assistant service used for system design and implementation guidance
+    assistant: @NexusAssistant, the assistant service used for system design and implementation guidance
 
 actions:
     queryAssistant: Asks @NexusAssistant for system design or implementation guidance on specific features or questions
@@ -79,7 +77,7 @@ purpose:
     - Needs precise context and constraints to generate appropriate artifacts
 
 properties:
-    assistant is @NexusAssistant, the assistant service used for product, design, and implementation guidance
+    assistant: @NexusAssistant, the assistant service used for product, design, and implementation guidance
 
 actions:
     manageProductRequirements: Creates and maintains @ProductView based on user needs and business requirements
@@ -104,7 +102,7 @@ purpose:
     - Written in Nexus language focusing on WHY features exist
 
 properties:
-    systemDesigns is @SystemDesignView, collection of system designs that realize this product
+    systemDesigns: @SystemDesignView, collection of system designs that realize this product
 
 entity: SystemDesignView
 role: component
@@ -115,7 +113,7 @@ purpose:
     - Written in Nexus language focusing on architectural decisions and patterns
 
 properties:
-    componentImplementations is @ComponentImplementation, collection of component implementations that realize this design
+    componentImplementations: @ComponentImplementation, collection of component implementations that realize this design
 
 entity: ComponentImplementation
 role: component
@@ -124,6 +122,71 @@ purpose:
     - Describes the actual technical implementation of features
     - Contains APIs, data structures, algorithms, and technical constraints
     - Written in Nexus language focusing on concrete implementation requirements
+
+entity: IntelligentTraceEngine
+role: service
+purpose:
+    - Combines embedding-based similarity with LLM reasoning to discover accurate trace links between specifications and code
+    - Validates and explains connections using contextual understanding beyond simple similarity matching
+    - Reasons about indirect relationships that embeddings alone cannot capture
+    - Generates human-readable explanations for why trace links exist
+    - Resolves ambiguities when multiple entities appear similar
+    - Continuously learns and refines trace quality based on validation feedback
+    - Persists discovered trace links to disk avoiding expensive re-discovery on restart when nothing has changed
+    - Detects when any specification or code entity changes and triggers full trace re-discovery while reusing unchanged entity embeddings
+    - Enriches entity understanding with complete architectural context before comparing them for better trace discovery
+
+properties:
+    embeddingAnalyzer: @SemanticMatcher, provides initial similarity-based candidate matches
+    llmReasoner: @LLMReasoner, validates candidates and discovers non-obvious connections
+    traceValidation: @TraceValidation, confidence scoring and quality assessment
+    explanationGenerator: @ExplanationGenerator, creates human-readable justifications for trace links
+    contextEnricher: @ContextEnricher, gathers complete entity context for accurate understanding
+
+actions:
+    discoverTraces: Uses @embeddingAnalyzer to find candidate matches, then @llmReasoner to validate and discover additional connections
+    validateTraceLink: Applies @llmReasoner to confirm if a candidate trace link is valid given full specification and code context
+    explainConnection: Generates natural language explanation of why a specification connects to specific code
+    reasonAboutIndirectLinks: Uses @llmReasoner to follow chains of relationships that embeddings miss
+    disambiguateMatches: Applies contextual reasoning when multiple similar entities exist to identify correct connections
+    assessTraceConfidence: Scores trace link quality using both semantic similarity and logical reasoning
+    refineTraceQuality: Learns from user feedback to improve future trace discovery accuracy
+    enrichContext: Uses @ContextEnricher to gather complete understanding of entities including their relationships and architectural role before matching
+
+entity: SemanticMatcher
+role: component
+purpose:
+    - Provides fast embedding-based similarity matching as first stage of trace discovery
+    - Generates candidate trace links for @IntelligentTraceEngine validation
+
+entity: LLMReasoner
+role: component
+purpose:
+    - Applies large language model reasoning to validate trace links and discover non-obvious connections
+    - Understands context, intent, and logical relationships beyond embedding similarity
+
+entity: TraceValidation
+role: component
+purpose:
+    - Scores trace link confidence based on multiple quality signals
+    - Identifies high-confidence traces and flags uncertain connections for review
+
+entity: ExplanationGenerator
+role: component
+purpose:
+    - Creates human-readable justifications explaining why trace links exist
+    - Helps developers understand traceability rationale, not just see connections
+
+entity: ContextEnricher
+role: component
+purpose:
+    - Provides complete understanding of each entity before comparing them for trace discovery
+    - Gathers how entities relate to other entities in the system showing their architectural role
+    - Explains what each layer represents so connections make sense to developers and product managers
+    - Includes related entities that provide context about why an entity exists and how it fits in the broader system
+    - Ensures trace discovery understands the complete picture rather than isolated entity descriptions
+    - Reduces false connections by helping identify when entities serve different purposes despite similar names
+    - Improves accuracy of discovered traces by providing rich context that reveals true semantic relationships
 
 entity: MCPServerInterface
 role: service
@@ -134,7 +197,7 @@ purpose:
     - Allows external tools to request @ImplementationContext and navigate specification layers
 
 properties:
-    exposedOperations is @NexusAssistant, subset of @NexusAssistant actions available through MCP protocol
+    exposedOperations: @NexusAssistant, subset of @NexusAssistant actions available through MCP protocol
 
 actions:
     serveMCPRequest: Handles incoming MCP protocol requests from external AI agents
@@ -175,12 +238,6 @@ Then the assistant provides context across all three layers in sequence:
     - @ComponentImplementation: Specific technical details and code-level requirements that realize the design
 And enables navigation between layers following the product → design → implementation flow
 
-scenario: TraceRequirementToCode
-Given a business requirement defined in @ProductView
-When a developer needs to implement it
-Then @NexusAssistant traces the requirement through @SystemDesignView to specific @ComponentImplementation
-And shows which source code files and functions implement which product features
-And provides implementation guidance consistent across all three layers
 
 scenario: FindWhyCodeExists
 Given a developer looking at unfamiliar code
@@ -193,9 +250,10 @@ And explains the business value delivered by this code
 scenario: IdentifyImplementationGaps
 Given @ProductManager reviewing product roadmap
 When they query @NexusAssistant about feature status
-Then the assistant shows which requirements are fully implemented
+Then the assistant shows which requirements are fully implemented with high-confidence trace links
 And highlights which requirements have no corresponding code yet
-And helps prioritize implementation work based on gaps
+And flags low-confidence traces for human review
+And helps prioritize implementation work based on gaps and trace quality
 
 scenario: AssessChangeImpact
 Given @Developer planning to modify code
@@ -323,6 +381,71 @@ And learns from which results the user explores to improve relevance
 And suggests related entities based on exploration patterns
 And enables rapid, fluid discovery through intelligent suggestions
 
+scenario: LLMEnhancedTraceDiscovery
+Given @NexusAssistant analyzing specifications and codebase for trace links
+When embeddings identify candidate connections
+Then @IntelligentTraceEngine applies LLM reasoning to validate each candidate
+And filters out false positives by understanding full context of specifications and code
+And discovers additional connections through multi-hop reasoning that embeddings missed
+And assigns confidence scores based on both semantic similarity and logical validation
+And provides explanations for each discovered trace link
+And ensures high-quality traceability that users can trust
+
+scenario: ExplainWhyCodeImplementsSpec
+Given a developer viewing a trace link between specification and code
+When they ask why this connection exists
+Then @IntelligentTraceEngine analyzes the specification's purpose, properties, and actions
+And examines the code's structure, logic, and naming
+And generates natural language explanation describing:
+    - Which specification requirements the code fulfills
+    - How the code's behavior aligns with specification intent
+    - Why this connection makes logical sense
+    - Confidence level in this trace link
+And helps developers understand traceability rationale, not just see connections
+
+scenario: DiscoverIndirectTraceLinks
+Given a product requirement that doesn't directly mention implementation details
+When embedding-based search finds no obvious code matches
+Then @IntelligentTraceEngine uses LLM to reason through the design layer
+And identifies which design entities realize the product requirement
+And traces from those design entities to actual implementing code
+And builds multi-hop trace paths: requirement → design → implementation
+And reveals connections that pure similarity matching cannot find
+And shows complete traceability even when direct similarity is low
+
+scenario: ResolveTraceAmbiguity
+Given multiple specification entities with similar embeddings to a code component
+When @IntelligentTraceEngine needs to determine the correct connection
+Then it uses LLM reasoning to understand contextual differences between candidates
+And examines the code's actual logic flow and behavior deeply
+And compares against each candidate specification's requirements
+And identifies which specification truly describes this code's intent
+And explains precisely why this match is correct and why other candidates were rejected
+And provides confidence score for the decision
+And prevents false trace links that would mislead developers
+
+scenario: LearnFromTraceFeedback
+Given users validate, correct, or reject discovered trace links
+When @IntelligentTraceEngine receives this feedback
+Then it uses LLM to understand why the trace was correct or incorrect
+And updates its reasoning patterns to improve future discovery
+And refines confidence scoring based on what makes good traces
+And continuously improves trace quality without manual retraining
+And adapts to project-specific patterns and conventions
+
+scenario: ContextAwareTraceDiscovery
+Given a product requirement describing user authentication flow
+When the requirement uses business terminology with minimal technical implementation details
+And direct text similarity to authentication code is low
+Then @IntelligentTraceEngine uses @ContextEnricher to gather complete understanding of the requirement
+And @ContextEnricher identifies related entities showing this requirement connects to security and user management
+And @ContextEnricher explains what the product layer represents: business value and user-facing capabilities
+And @ContextEnricher explains what the code layer represents: actual technical implementation
+And @IntelligentTraceEngine uses this enriched context to understand the requirement's true purpose and scope
+And discovers the correct connection to authentication code because enriched context reveals the semantic relationship
+And provides clear explanation to developers showing why the connection makes sense despite different terminology
+And developers trust the discovered trace because the rationale explains the business-to-technical mapping
+
 rule: ContextualAccuracy
 @NexusAssistant must only provide implementation guidance that is consistent with both product requirements and architectural constraints
 
@@ -344,17 +467,11 @@ Product requirements connect to code through design specifications, never direct
 rule: BidirectionalTraceability
 The assistant must support tracing both top-down (from product requirements through design to actual code) and bottom-up (from code through design to product value and business justification)
 
-rule: AutomaticTraceDiscovery
-@NexusAssistant must automatically discover connections between specifications and code without requiring manual tagging or linking
-
 rule: CoverageVisibility
 Product managers and developers must be able to see which requirements have been implemented and which have gaps
 
-rule: ImpactAwareness
-When code or specifications change, @NexusAssistant must identify and communicate what else might be affected
-
 rule: RelationalImpactAnalysis
-@NexusAssistant must identify and present all related entities that may be affected by changes or whose relations are important to consider in any context, including implementation, design decisions, product changes, or understanding existing features
+When code or specifications change, @NexusAssistant must identify and communicate all related entities that may be affected or whose relationships are important to consider in any context, including implementation, design decisions, product changes, or understanding existing features
 
 rule: SemanticSearchCapability
 @NexusAssistant must support natural language queries that don't require exact entity names - searches must understand user intent, match concepts semantically, and return relevant results based on meaning rather than text matching alone
@@ -362,11 +479,8 @@ rule: SemanticSearchCapability
 rule: EntityDiscoverability
 Users must be able to discover entities without prior knowledge of entity names - @NexusAssistant must provide browsing, filtering, and exploration capabilities by catalog, layer, role, and context to enable understanding of the monitored system
 
-rule: AccuracyOverSpeed
-@NexusAssistant must prioritize accuracy and precision of results over response speed - returning the correct, most relevant entities is more important than fast responses, though both should be optimized
-
-rule: RapidSemanticRetrieval
-@NexusAssistant should return relevant entities quickly by deeply understanding question intent and semantically matching against entity purposes, properties, actions, and relationships - but speed optimizations must never compromise accuracy or completeness of results
+rule: AccuracyAndCompleteness
+@NexusAssistant must prioritize accuracy, precision, and completeness over response speed - returning all correct, relevant entities is more important than fast responses - but speed should be optimized where it doesn't compromise quality
 
 rule: DeepEntityUnderstanding
 @NexusAssistant must analyze and understand the complete semantic meaning of each entity including its purpose statements, property descriptions, action definitions, and relationships - not just entity names or keywords
@@ -377,8 +491,26 @@ rule: CrossLayerSearch
 rule: IntelligentRelevanceRanking
 Search results must be ranked by contextual relevance considering semantic similarity, entity richness, relationship centrality, layer appropriateness, and indirect connections - most relevant entities must appear first with clear relevance explanations
 
-rule: CompleteCoverageOverSpeed
-When searching for relevant entities, @NexusAssistant must ensure complete coverage of all potentially relevant entities before applying performance optimizations - missing correct results is worse than slower responses
-
 rule: SemanticPrecision
 @NexusAssistant must use appropriate similarity thresholds to balance recall (finding all relevant entities) and precision (avoiding irrelevant results) - threshold tuning must prioritize avoiding false positives while maintaining good recall
+
+rule: HybridTraceDiscovery
+@IntelligentTraceEngine must automatically discover connections between specifications and code without manual tagging by combining embedding-based similarity with LLM reasoning - neither approach alone is sufficient for accurate traceability that users can trust
+
+rule: ExplainableTraceLinks
+Every discovered trace link must include a human-readable explanation of why the connection exists, generated by @IntelligentTraceEngine, so developers understand rationale behind traceability
+
+rule: ConfidenceTransparency
+@IntelligentTraceEngine must provide confidence scores for all trace links so users understand reliability and can focus review on uncertain traces
+
+rule: ContextualTraceValidation
+LLM reasoning must consider full context including entity purposes, relationships, code behavior, and system architecture - not just isolated similarity scores - when validating trace links
+
+rule: ContinuousTraceLearning
+@IntelligentTraceEngine must learn from user feedback to continuously improve trace discovery accuracy and reduce false positives over time without requiring manual retraining
+
+rule: MultiHopTraceReasoning
+@IntelligentTraceEngine must be capable of following chains of relationships across layers to discover indirect trace links that direct similarity matching cannot find
+
+rule: TraceAmbiguityResolution
+When multiple specifications appear similar to code, @IntelligentTraceEngine must use LLM reasoning to disambiguate and identify the correct connection with detailed explanation of why other candidates were rejected
