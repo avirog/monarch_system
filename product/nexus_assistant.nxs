@@ -5,13 +5,15 @@ entity: NexusAssistant
 role: service
 purpose:
     - Bridges the gap between product specifications and implementation by providing contextual guidance
-    - Rapidly finds and retrieves relevant entities from any layer using deep semantic understanding of questions and specifications
-    - Deeply understands entity purposes, properties, actions, and relationships to answer contextual queries with precision
+    - Rapidly finds and retrieves relevant specification fragments from any layer using deep semantic understanding of questions
+    - Precisely matches queries to specific statements, actions, properties, and rules rather than entire entities for accurate results
+    - Returns exact matching content with full context including parent entity and all referenced entities
+    - Deeply understands individual statement semantics and relationships to answer contextual queries with precision
     - Enables product managers to manage requirements and create new features effectively
     - Enables developers to manage system design that supports product needs and to implement features
     - Enables AI agents to understand exact implementation requirements from product and architectural designs
-    - Automatically discovers which code implements which specifications using AI analysis
-    - Shows developers and product managers how requirements connect to actual implementation
+    - Automatically discovers which code fragments implement which specification fragments using AI analysis
+    - Shows developers and product managers how specific requirements connect to actual implementation code
     - Reduces miscommunication between product vision, system design and technical execution
 
 properties:
@@ -30,7 +32,7 @@ actions:
     manageRequirements: Helps organize, track, and maintain @ProductView for product managers
     manageSystemDesign: Helps organize, track, and maintain @SystemDesignView for developers
     validateFeatureReadiness: Checks if new feature specifications are complete and ready for design and implementation
-    searchSpecifications: Semantically finds relevant entities from any layer by deeply understanding question intent and matching against purposes, properties, actions, and relationships
+    searchSpecifications: Semantically finds relevant specification fragments from any layer by deeply understanding question intent and matching against individual statements, returning precise results with parent entity context and referenced entities
     discoverEntities: Lists and explores entities across catalogs, filtered by layer, role, catalog, or context
     exploreEntity: Provides detailed information about a specific entity including its purpose, properties, actions, and relationships
     browseEntityGraph: Enables navigation through the entity relationship graph to understand system structure and dependencies
@@ -126,15 +128,16 @@ purpose:
 entity: IntelligentTraceEngine
 role: service
 purpose:
-    - Combines embedding-based similarity with LLM reasoning to discover accurate trace links between specifications and code
+    - Combines embedding-based similarity with LLM reasoning to discover accurate trace links between specification fragments and code fragments
+    - Creates fine-grained embeddings for each statement, action, property, and code method enabling precise matching
     - Validates and explains connections using contextual understanding beyond simple similarity matching
     - Reasons about indirect relationships that embeddings alone cannot capture
-    - Generates human-readable explanations for why trace links exist
-    - Resolves ambiguities when multiple entities appear similar
+    - Generates human-readable explanations for why trace links exist between specific fragments
+    - Resolves ambiguities when multiple fragments appear similar
     - Continuously learns and refines trace quality based on validation feedback
     - Persists discovered trace links to disk avoiding expensive re-discovery on restart when nothing has changed
-    - Detects when any specification or code entity changes and triggers full trace re-discovery while reusing unchanged entity embeddings
-    - Enriches entity understanding with complete architectural context before comparing them for better trace discovery
+    - Detects when any specification or code fragment changes and triggers targeted re-discovery while reusing unchanged fragment embeddings
+    - Enriches fragment understanding with parent entity context and referenced entities before comparing them for better trace discovery
 
 properties:
     embeddingAnalyzer: @SemanticMatcher, provides initial similarity-based candidate matches
@@ -156,8 +159,9 @@ actions:
 entity: SemanticMatcher
 role: component
 purpose:
-    - Provides fast embedding-based similarity matching as first stage of trace discovery
-    - Generates candidate trace links for @IntelligentTraceEngine validation
+    - Provides fast embedding-based similarity matching at fragment level as first stage of trace discovery
+    - Compares individual statement and code method embeddings for precise matching
+    - Generates candidate trace links between specific fragments for @IntelligentTraceEngine validation
 
 entity: LLMReasoner
 role: component
@@ -180,12 +184,12 @@ purpose:
 entity: ContextEnricher
 role: component
 purpose:
-    - Provides complete understanding of each entity before comparing them for trace discovery
-    - Gathers how entities relate to other entities in the system showing their architectural role
+    - Provides complete understanding of each fragment before comparing them for trace discovery
+    - Gathers parent entity context and all referenced entities showing their architectural role
     - Explains what each layer represents so connections make sense to developers and product managers
-    - Includes related entities that provide context about why an entity exists and how it fits in the broader system
-    - Ensures trace discovery understands the complete picture rather than isolated entity descriptions
-    - Reduces false connections by helping identify when entities serve different purposes despite similar names
+    - Includes related entities that provide context about why a fragment exists and how it fits in the broader system
+    - Ensures trace discovery understands the complete picture rather than isolated statement text
+    - Reduces false connections by helping identify when fragments serve different purposes despite similar wording
     - Improves accuracy of discovered traces by providing rich context that reveals true semantic relationships
 
 entity: MCPServerInterface
@@ -266,9 +270,10 @@ scenario: ExploratoryNaturalLanguageSearch
 Given a developer or product manager unfamiliar with the system
 When they ask "What components are responsible for parsing specifications?"
 Then @NexusAssistant understands the semantic intent without requiring exact entity names
-And searches specifications using meaning and context, not exact text matching
-And returns relevant components that handle specification parsing
-And explains how these components work together to accomplish parsing
+And searches specification fragments using meaning and context, not exact text matching
+And returns specific action and purpose statements that describe parsing responsibilities
+And includes parent entity information and referenced entities for complete context
+And explains how these fragments and their entities work together to accomplish parsing
 
 scenario: SemanticLayerDiscovery
 Given an @AIAgent exploring the system architecture
@@ -330,26 +335,28 @@ Then @NexusAssistant discovers all entities with that role
 And shows how entities of that role interact within the system
 And provides context about each entity's responsibilities
 
-scenario: AccurateContextualEntityRetrieval
+scenario: AccurateContextualFragmentRetrieval
 Given a developer asks "What entities are involved in processing payment transactions?"
 When @NexusAssistant receives this complex contextual question
 Then it thoroughly analyzes the question to extract key concepts: "payment", "transactions", "processing"
-And searches across both @ProductView and @SystemDesignView comprehensively to ensure no relevant entities are missed
-And deeply understands entity purposes, properties, and actions to find accurate semantic matches
+And searches across both @ProductView and @SystemDesignView fragments comprehensively to ensure no relevant statements are missed
+And deeply understands individual statement semantics including purposes, properties, and actions to find accurate semantic matches
 And verifies semantic similarity scores meet quality thresholds to avoid false positives
-And identifies PaymentFlow in product layer, PaymentGateway in design layer, and all related entities
-And ranks results by relevance showing most contextually appropriate entities first with confidence scores
+And identifies specific purpose and action statements in PaymentFlow, PaymentGateway, and related entities
+And returns matched fragments with parent entity information and all referenced entities for complete context
+And ranks results by relevance showing most contextually appropriate fragments first with confidence scores
 And returns complete, accurate results optimized for speed where possible without compromising correctness
 
 scenario: DeepSemanticUnderstanding
 Given a product manager asks "Which features help users recover from errors?"
 When @NexusAssistant processes this question
 Then it understands "recover from errors" semantically (not just text matching)
-And analyzes entity purposes to find those describing error handling, validation, recovery flows
-And examines entity actions to identify retry, rollback, or recovery operations
-And considers entity relationships to find connected error management capabilities
-And returns relevant entities from multiple layers showing complete error recovery ecosystem
-And explains how each entity contributes to error recovery
+And analyzes purpose statement fragments to find those describing error handling, validation, recovery flows
+And examines action statement fragments to identify retry, rollback, or recovery operations
+And considers referenced entities in each fragment to find connected error management capabilities
+And returns specific matching statement fragments from multiple layers showing complete error recovery ecosystem
+And includes parent entity context and all referenced entities for each matched fragment
+And explains how each fragment contributes to error recovery
 
 scenario: CrossLayerContextualSearch
 Given an @AIAgent asks "What defines and implements user authentication?"
@@ -482,8 +489,8 @@ Users must be able to discover entities without prior knowledge of entity names 
 rule: AccuracyAndCompleteness
 @NexusAssistant must prioritize accuracy, precision, and completeness over response speed - returning all correct, relevant entities is more important than fast responses - but speed should be optimized where it doesn't compromise quality
 
-rule: DeepEntityUnderstanding
-@NexusAssistant must analyze and understand the complete semantic meaning of each entity including its purpose statements, property descriptions, action definitions, and relationships - not just entity names or keywords
+rule: DeepFragmentUnderstanding
+@NexusAssistant must analyze and understand the complete semantic meaning of each specification fragment including its statement text, parent entity context, and all referenced entities - enabling precise matching at statement level rather than coarse entity-level matching
 
 rule: CrossLayerSearch
 @NexusAssistant must seamlessly search across @ProductView, @SystemDesignView, and @ComponentImplementation layers simultaneously when questions span multiple perspectives, returning unified results that show connections between layers
@@ -493,6 +500,9 @@ Search results must be ranked by contextual relevance considering semantic simil
 
 rule: SemanticPrecision
 @NexusAssistant must use appropriate similarity thresholds to balance recall (finding all relevant entities) and precision (avoiding irrelevant results) - threshold tuning must prioritize avoiding false positives while maintaining good recall
+
+rule: SpecificSearchResultRequirement
+@NexusAssistant.searchSpecifications must return specific fragments that precisely match the query intent, providing the exact statement, action, property, or rule that answers the question along with parent entity and referenced entity context for complete understanding
 
 rule: HybridTraceDiscovery
 @IntelligentTraceEngine must automatically discover connections between specifications and code without manual tagging by combining embedding-based similarity with LLM reasoning - neither approach alone is sufficient for accurate traceability that users can trust
