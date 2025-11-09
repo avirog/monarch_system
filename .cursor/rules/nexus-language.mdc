@@ -17,7 +17,8 @@ The language combines structured syntax with free-text descriptions. Each perspe
 ## File Structure
 - Files should have `.nxs` extension
 - Start with catalog declaration
-- Follow with entity definitions, rules, and scenarios
+- Follow with entity definitions and scenarios
+- Rules belong to entities (not top-level)
 
 ## Syntax Rules
 
@@ -33,28 +34,31 @@ imports:
 ### 2. Entity Definition
 ```nexus
 entity: EntityName
-role: platform|language|actor|module|component|service
+role: platform|language|actor|module|component|service|struct
 purpose:
-    - Single line purpose statement
-    - Multi-line purpose with bullet points
+    - Single line purpose statement (plain text, no references)
+    - Multi-line purpose with bullet points (plain text, no references)
 
 properties:
-    propertyName is TypeName, description, default value
-    propertyName may be TypeName
-    propertyName is one of {Option1, Option2, Option3}
+    property_name: Description (plain text, no references)
+    another_property: Another property description
 
 actions:
-    actionName: Description of what this action does
-    anotherAction: Another action description
+    action_name: Description of what this action does (plain text, no references)
+    another_action: Another action description
+
+relations:
+    @TargetEntity: Description of relationship (plain text, no references)
+    @AnotherEntity:
+        - Multi-line relation description (plain text)
+        - Each bullet describes the relationship
+
+rules:
+    RuleName: Description of the business rule or constraint (plain text, no references)
+    AnotherRule: Another rule description
 ```
 
-### 3. Rules
-```nexus
-rule: RuleName
-Description of the business rule or constraint
-```
-
-### 4. Scenarios
+### 3. Scenarios
 ```nexus
 scenario: ScenarioName
 Free-form description of the scenario.
@@ -64,29 +68,35 @@ Can use Given/When/Then/And format, or when-case, or any narrative style.
 ## Key Syntax Elements
 
 ### Entity References
-The language supports multiple types of references using the `@` prefix:
+The language supports entity references using the `@` prefix, but **only in specific contexts**:
 
 1. **Direct entity reference**: `@EntityName`
    - References an entity in the current catalog
    
 2. **Catalog-qualified reference**: `@catalog.entity`
    - References an entity from an imported catalog
-   
-3. **Property/Action reference**: `@entity.property/@entity.action`
-   - References a specific property of an entity
-   
+
+**Where references are allowed:**
+- ✅ **Relations section**: `@TargetEntity: description` where description clearly explains who gives/receives/uses what
+- ✅ **Scenarios**: References can appear in scenario steps
+
+**Where references are NOT allowed:**
+- ❌ Purpose statements (plain text only)
+- ❌ Properties (plain text only)
+- ❌ Actions (plain text only)
+- ❌ Rules (plain text only)
+
 **Usage notes:**
-- References can appear in any free text: purpose statements, property descriptions, action descriptions, rules, scenarios, etc.
 - Referenced entities don't need to be defined in order
 - Use catalog-qualified references for imported entities
+- Write relation descriptions that clearly express who gives/receives/contains/uses what
 
 
 ### Property Types
 - Basic types: `String`, `Number`, `Boolean`
 - Custom types: `CNAME` (alphanumeric identifiers)
-- Set literals: `{Option1, Option2, Option3}`
-- Values: `true`, `false`, `unknown`, `CNAME`, `SIGNED_NUMBER`
-- Entity Types: `@EntityName`
+- Entity Types: `EntityName` (without @ prefix - plain text type name)
+- Property descriptions are plain text (no entity references)
 
 
 ## Programming Perspectives
@@ -94,9 +104,10 @@ The language supports multiple types of references using the `@` prefix:
 ### Product Manager Perspective (WHAT/WHY)
 Product managers define **product entities** - things visible and relevant to product:
 - **Entities**: User-facing features, capabilities, business concepts, user journeys
-- **Purpose statements**: Describe what the entity does and why it exists from user/business perspective
-- **Scenarios**: Define user stories and expected behaviors
-- **Rules**: Capture business logic and product constraints
+- **Purpose statements**: Describe what the entity does and why (plain text)
+- **Relations**: `@TargetEntity: description` - clearly express who gives/receives/uses what
+- **Scenarios**: Define user stories with entity references in steps
+- **Rules**: Capture business logic and constraints (plain text)
 - **Entity roles**: Typically `actor`, `service` or any other from user perspective
 - Free-text descriptions explain the "why" behind product decisions
 
@@ -107,24 +118,34 @@ catalog: CheckoutProduct
 entity: PaymentFlow
 role: service
 purpose:
-    - Enables @Customer to complete purchases quickly
-    - Supports multiple payment methods to maximize conversion
-    - Provides clear feedback and error recovery for failed payments
+    - Enables fast and reliable payment processing
+    - Provides clear feedback and error recovery
+
+relations:
+    @Customer: processes payments submitted by customers
+    @PaymentMethod: validates and charges payment methods for customers
+
+rules:
+    FastProcessing: Must complete within 3 seconds
+    ErrorRecovery: Must provide clear feedback on failures
 
 entity: Customer
 role: actor
-purpose: User who purchases products through the platform
+purpose: Represents users purchasing products
 
 scenario: SuccessfulPurchase
-@Customer completes checkout and has valid payment credentials
+Given @Customer completes checkout and has valid payment credentials
+When @PaymentFlow processes the payment
 Then payment is processed within 3 seconds and returns immediate confirmation
 ```
 
 ### Software Architect/Engineer Perspective (HOW)
 Engineers define **design entities** - technical components of the implementation:
 - **Entities**: Services, modules, components, databases, APIs, infrastructure
-- **Properties**: Data structures, types, constraints, configuration, other entities
-- **Actions**: Operations, interfaces, APIs
+- **Properties**: Data structures, types, constraints, configuration (plain text)
+- **Actions**: Operations, interfaces, APIs (plain text)
+- **Relations**: `@TargetEntity: description` - clearly express who gives/receives/uses what
+- **Rules**: Technical constraints and design rules (plain text)
 - **Entity roles**: `platform`, `module`, `component`, `service`, `struct`... from technical perspective
 - Free-text descriptions explain technical decisions and patterns
 
@@ -140,57 +161,94 @@ entity: PaymentGateway
 role: component
 purpose: 
     - External integration layer for payment processing
-    - Uses @external.PaymentProvider for transaction handling
-    - Reports metrics to @MetricsCollector
+    - Handles transaction execution and metrics reporting
+
 properties:
-    maxRetries is Number, retry attempts for @external.PaymentProvider.process, default 3
-    apiVersion is String, @external.PaymentProvider API version
-    metricsEnabled is Boolean, enables reporting to @MetricsCollector, default true
+    max_retries: Number, maximum retry attempts, default 3
+    api_version: String, provider API version
+    metrics_enabled: Boolean, enable metrics reporting, default true
+
 actions:
-    authorizePayment: Validates funds using @external.PaymentProvider.validate
-    capturePayment: Completes transaction via @external.PaymentProvider.process
-    handleWebhook: Processes notifications from @external.PaymentProvider.events
+    authorize_payment: Validates available funds
+    capture_payment: Executes the transaction
+    handle_webhook: Processes provider notifications
+
+relations:
+    @external.PaymentProvider: sends transaction requests to provider and receives responses
+    @MetricsCollector: sends transaction metrics and performance data to collector
+
+rules:
+    RetryPolicy: Maximum 3 retry attempts per transaction
+    MetricsRequired: All transactions must be reported
 
 entity: PaymentDatabase
 role: module
-purpose: Persists @PaymentGateway transactions and provides audit logs for @MetricsCollector
+purpose: Persistent storage for transaction history and audit logs
+
 properties:
-    gateway is PaymentGateway, reference to @PaymentGateway instance
+    gateway: PaymentGateway, gateway instance reference
+
 actions:
-    logTransaction: Records @PaymentGateway.capturePayment result
-    queryMetrics: Provides data for @MetricsCollector.report
-@
+    log_transaction: Records transaction results
+    query_metrics: Retrieves aggregated metrics
+
+relations:
+    @PaymentGateway: receives and stores transaction records from gateway
+    @MetricsCollector: provides historical transaction data to collector for analysis
+
 ```
 
 ## Best Practices
 
 ### 1. Naming Conventions
-- Use PascalCase for entity names: `SystemA`, `UserService`
-- Use camelCase for properties: `userName`, `isActive`
-- Use descriptive names that reflect the domain
+- Use PascalCase for entity names: `PaymentFlow`, `UserService`
+- Use snakeCase for properties and actions: `max_retries`, `authorize_payment`
+- Use descriptive names that clearly reflect purpose and domain
 
 ### 2. Purpose Statements
 - **Product perspective**: Focus on business value and user impact
 - **Architect perspective**: Focus on technical responsibility and system role
-- Start with action verbs when possible
-- Be specific about what the entity does and why
-- Include context about relationships with other entities
-- Use bullet points for complex purposes with multiple concerns
+- Start with action verbs for clarity
+- Be concise - avoid repeating information from other sections
+- **Important**: Purpose statements are plain text - do NOT use entity references
+- Use bullet points for multiple distinct concerns
+- Put relationship details in the `relations` section, not in purpose
 
-### 3. Entity References
+### 3. Relations
+- Define explicit relationships in the `relations` section
+- Format: `@TargetEntity: description` where description clearly explains the relationship
+- **Write clear relationship descriptions** that answer: who gives/receives/contains/uses/depends-on what from/to whom
+  - Good: `@Database: stores transaction data in database`
+  - Good: `@PaymentProvider: receives payment requests from this service`
+  - Good: `@Customer: processes payments for customers`
+  - Good: `@MetricsCollector: sends performance metrics to collector`
+  - Avoid: `@PaymentProvider: handles payments` (unclear who does what)
+- The description is plain text - no additional `@` entity references allowed
+- Use entity names (without `@`) in descriptions when needed for clarity
+- Use `@EntityName` for same catalog, `@catalog.entity` for imports
+- Support single-line or multi-line bullet format
+
+### 4. Entity References
+- **Only use references in relations and scenarios**
 - Use simple references `@EntityName` when referring to entities in the same catalog
 - Use catalog-qualified references `@catalog.entity` for imported entities
-- Use member references `@entity.property` or `@entity.action` to refer to specific parts
 - Keep references consistent across the specification
 - Group related entities together
 
 
-## Error Prevention
-- Always include catalog declaration
-- Ensure entity references use @ prefix
-- Use proper indentation for multi-line content
-- End each statement with newline
-- Validate that referenced entities exist
+## Common Mistakes to Avoid
+- ❌ Using `@Entity` references in purpose, properties, actions, or rules
+- ❌ Defining rules at top-level (they belong inside entities)
+- ❌ Repeating the same information in purpose and relations
+- ❌ Forgetting the catalog declaration
+- ❌ Inconsistent indentation
+
+## Must Do
+- ✅ Always include catalog declaration at the top
+- ✅ Use `@` prefix for entity references (only in relations and scenarios)
+- ✅ Define rules within the entities they apply to
+- ✅ Use the `relations` section for explicit entity relationships
+- ✅ Keep descriptions concise and avoid redundancy
 
 ## File Organization
 
@@ -200,6 +258,8 @@ actions:
 - One file per major domain or feature area
 - Group related entities together within each file
 - Use imports for shared definitions across files
+- Define rules within the entities they apply to
+- Use explicit `relations` sections to define entity relationships
 
 ### Key Principles
 - Product and engineering entities are independent - they don't need to match

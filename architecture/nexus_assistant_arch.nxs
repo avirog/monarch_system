@@ -142,9 +142,9 @@ actions:
     parseFile: Reads and parses a .nxs file into ParsedSpecification
     validateSyntax: Checks for syntax errors and returns validation results
 relations:
-    @ParsedSpecification: produces as output from parsing
-    @ValidationEngine: uses to ensure syntax and semantic correctness
-    @KnowledgeGraph: populates with parsed entities and relations
+    @ParsedSpecification: produces parsed specification structures from .nxs files
+    @ValidationEngine: sends parsed specifications to engine for syntax and semantic validation
+    @KnowledgeGraph: populates graph with parsed entities and relations
 
 entity: KnowledgeGraph
 role: module
@@ -183,10 +183,10 @@ actions:
     removeFragmentsByFile: Removes all fragments from entities in specific file (for reindexing)
     remove_code_entities_by_file: Removes all code entities from a specific file (for reindexing)
 relations:
-    @Relation: stores typed relations between entities
-    @Fragment: stores fine-grained statement-level fragments
-    @CodeEntity: stores parsed code elements
-    @TraceLink: stores discovered semantic relationships
+    @Relation: stores typed relation objects in graph
+    @Fragment: stores fine-grained fragment objects in graph
+    @CodeEntity: stores parsed code entity objects in graph
+    @TraceLink: stores discovered trace link objects in graph
 
 entity: QueryProcessor
 role: component
@@ -214,10 +214,10 @@ actions:
     loadEmbeddings: Loads pre-generated fragment embeddings from traceability matcher vector store for semantic search
     updateFragmentEmbedding: Incrementally updates single fragment embedding during discovery enabling real-time semantic search availability
 relations:
-    @KnowledgeGraph: queries for entities, fragments, and relationships
-    @EmbeddingCache: uses for query and fragment embeddings
-    @TraceabilityMatcher: loads pre-generated fragment embeddings from
-    @TraceLink: retrieves and traverses for traceability queries
+    @KnowledgeGraph: queries graph for entities, fragments, and relationships
+    @EmbeddingCache: stores and retrieves query and fragment embeddings from cache
+    @TraceabilityMatcher: loads pre-generated fragment embeddings from matcher
+    @TraceLink: retrieves and traverses trace links for traceability queries
 
 entity: SpecificationStore
 role: platform
@@ -232,7 +232,7 @@ actions:
     watchFile: Monitors file for changes
     listSpecifications: Returns all available specifications
 relations:
-    @NexusParser: triggers to re-parse modified files
+    @NexusParser: triggers parser to re-parse modified specification files
 
 entity: APIGateway
 role: component
@@ -246,7 +246,7 @@ actions:
     routeToService: Forwards to query processor
     formatResponse: Standardizes JSON responses
 relations:
-    @QueryProcessor: routes requests to
+    @QueryProcessor: routes API requests to query processor for execution
 
 entity: MCPServer
 role: component
@@ -263,7 +263,7 @@ actions:
     exposeTool: Registers query processor operations as MCP tools including discoverEntities, exploreEntity, and browseEntityGraph
     formatMCPResponse: Serializes results in MCP protocol format
 relations:
-    @QueryProcessor: exposes capabilities through MCP protocol
+    @QueryProcessor: exposes query processor capabilities to external agents through MCP protocol
 
 entity: ValidationEngine
 role: component
@@ -310,7 +310,7 @@ properties:
     parseTimestamp: Number, when repository was last parsed
     contentHash: String, hash of repository state for change detection
 relations:
-    @CodeEntity: contains collection of parsed code elements
+    @CodeEntity: contains collection of code entities parsed from repository
 
 entity: CodeParser
 role: component
@@ -330,8 +330,8 @@ actions:
     shouldIndex: Filters out private functions, trivial getters, or test helpers
     extractSignature: Generates function signature including parameter types
 relations:
-    @CodeEntity: produces from parsed source code
-    @ParsedCodeRepository: produces from scanning codebase
+    @CodeEntity: produces code entity objects from parsed source code
+    @ParsedCodeRepository: produces parsed repository structure from scanning codebase
 
 entity: TraceLink
 role: struct
@@ -400,18 +400,18 @@ actions:
     discoverAllLinks: Checks trace storage cache validity, loads cached trace links if fragments unchanged, otherwise indexes all specification fragments and generates code fragments, creates embeddings for all fragments, discovers trace links across all layers with LLM validation then saves to cache
     populateVectorStore: Builds optimized vectorStore index for query processor with all fragment embeddings organized by layer and catalog
 relations:
-    @ContextEnricher: uses to generate rich fragment summaries
-    @SemanticMatcher: uses for fast fragment embedding-based candidate generation
-    @LLMReasoner: applies to validate candidates and discover non-obvious connections
-    @TraceValidator: uses to compute composite confidence scores
-    @ExplanationGenerator: calls to create rationales for trace links
-    @TraceStorage: uses to persist and load trace links
-    @EmbeddingCache: uses for content-based caching to avoid redundant API calls
-    @KnowledgeGraph: stores discovered TraceLink objects in
-    @QueryProcessor: populates vectorStore for
-    @Fragment: creates for specification and code elements
-    @CodeEntity: generates fragments from
-    @TraceLink: creates and stores
+    @ContextEnricher: receives enriched fragment summaries from enricher for embedding generation
+    @SemanticMatcher: receives candidate trace links from matcher for validation
+    @LLMReasoner: sends candidates to reasoner for validation and indirect connection discovery
+    @TraceValidator: sends trace links to validator for composite confidence scoring
+    @ExplanationGenerator: sends validated trace links to generator for rationale creation
+    @TraceStorage: saves and loads trace links to storage for persistence
+    @EmbeddingCache: stores and retrieves embeddings from cache to avoid redundant API calls
+    @KnowledgeGraph: stores discovered trace link objects in graph
+    @QueryProcessor: populates vector store for query processor semantic search
+    @Fragment: creates fragment objects for specification and code elements
+    @CodeEntity: generates fragments from code entities
+    @TraceLink: creates and stores trace link objects
 
 entity: EmbeddingCache
 role: component
@@ -442,7 +442,7 @@ actions:
     findSimilarFragments: Performs cosine similarity search at fragment level filtered by valid target layers
     generateCandidates: Returns list of potential trace links between fragments above threshold with raw similarity scores
 relations:
-    @TraceabilityMatcher: generates candidate trace links for validation
+    @TraceabilityMatcher: provides candidate trace links to matcher for LLM validation
 
 entity: LLMReasoner
 role: component
@@ -466,7 +466,7 @@ actions:
     reasonAboutBehavior: Analyzes code logic flow to match against specification intent
     buildValidationPrompt: Constructs LLM prompt including enriched entity context and layer transition semantics
 relations:
-    @LayerSemantics: uses to understand layer representations and transition patterns
+    @LayerSemantics: receives layer descriptions and transition semantics from layer semantics component
 
 entity: TraceValidator
 role: component
@@ -518,8 +518,8 @@ actions:
     getRelatedEntityContext: Queries knowledge graph to get related entities and their relationship types
     formatEnrichedSummary: Structures enriched fragment context into text format suitable for embedding or LLM consumption
 relations:
-    @KnowledgeGraph: retrieves entities and fragments from
-    @LayerSemantics: uses for layer descriptions and transition semantics
+    @KnowledgeGraph: retrieves entities and fragments from graph for context enrichment
+    @LayerSemantics: receives layer descriptions and transition semantics from layer semantics component
 
 entity: LayerSemantics
 role: component
@@ -539,8 +539,8 @@ actions:
     getValidationCriteria: Returns criteria for validating trace links for specific layer transition
     isValidTransition: Checks if transition between two layers is valid
 relations:
-    @ContextEnricher: used by for layer semantics
-    @LLMReasoner: used by to understand layer semantics
+    @ContextEnricher: provides layer descriptions and semantics to context enricher
+    @LLMReasoner: provides layer descriptions and transition patterns to LLM reasoner
 
 entity: TraceStorage
 role: component
@@ -570,8 +570,8 @@ actions:
     checkAndMigrateCache: Detects cache format version, auto-clears if outdated or incompatible with current version
     writeVersion: Persists current cache format version to disk for future migration detection
 relations:
-    @TraceLink: persists and loads discovered trace links
-    @EmbeddingCache: works with to enable efficient re-discovery
+    @TraceLink: persists and loads trace link objects to disk
+    @EmbeddingCache: works with embedding cache to enable efficient re-discovery after changes
 
 
 scenario: DiscoverEntitiesInCatalog
