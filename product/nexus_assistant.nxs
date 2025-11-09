@@ -6,6 +6,7 @@ role: service
 purpose:
     - Bridges the gap between product specifications and implementation by providing contextual guidance
     - Rapidly finds and retrieves relevant specification fragments from any layer using deep semantic understanding of questions
+    - Transforms natural language questions into multiple search variations that match documentation style, improving search accuracy across vocabulary differences
     - Precisely matches queries to specific statements, actions, properties, and rules rather than entire entities for accurate results
     - Returns exact matching content with full context including parent entity and all referenced entities
     - Deeply understands individual statement semantics and relationships to answer contextual queries with precision
@@ -32,7 +33,7 @@ actions:
     manageRequirements: Helps organize, track, and maintain @ProductView for product managers
     manageSystemDesign: Helps organize, track, and maintain @SystemDesignView for developers
     validateFeatureReadiness: Checks if new feature specifications are complete and ready for design and implementation
-    searchSpecifications: Semantically finds relevant specification fragments from any layer by deeply understanding question intent and matching against individual statements, returning precise results with parent entity context and referenced entities
+    searchSpecifications: Transforms user questions into multiple declarative search phrases, then semantically finds relevant specification fragments from any layer by matching against individual statements with each phrase, returning precise results with parent entity context, referenced entities, and which search phrase matched
     discoverEntities: Lists and explores entities across catalogs, filtered by layer, role, catalog, or context
     exploreEntity: Provides detailed information about a specific entity including its purpose, properties, actions, and relationships
     browseEntityGraph: Enables navigation through the entity relationship graph to understand system structure and dependencies
@@ -134,7 +135,6 @@ purpose:
     - Reasons about indirect relationships that embeddings alone cannot capture
     - Generates human-readable explanations for why trace links exist between specific fragments
     - Resolves ambiguities when multiple fragments appear similar
-    - Continuously learns and refines trace quality based on validation feedback
     - Persists discovered trace links to disk avoiding expensive re-discovery on restart when nothing has changed
     - Detects when any specification or code fragment changes and triggers targeted re-discovery while reusing unchanged fragment embeddings
     - Enriches fragment understanding with parent entity context and referenced entities before comparing them for better trace discovery
@@ -153,7 +153,6 @@ actions:
     reasonAboutIndirectLinks: Uses @llmReasoner to follow chains of relationships that embeddings miss
     disambiguateMatches: Applies contextual reasoning when multiple similar entities exist to identify correct connections
     assessTraceConfidence: Scores trace link quality using both semantic similarity and logical reasoning
-    refineTraceQuality: Learns from user feedback to improve future trace discovery accuracy
     enrichContext: Uses @ContextEnricher to gather complete understanding of entities including their relationships and architectural role before matching
 
 entity: SemanticMatcher
@@ -269,10 +268,12 @@ And warns about risks to product features
 scenario: ExploratoryNaturalLanguageSearch
 Given a developer or product manager unfamiliar with the system
 When they ask "What components are responsible for parsing specifications?"
-Then @NexusAssistant understands the semantic intent without requiring exact entity names
-And searches specification fragments using meaning and context, not exact text matching
+Then @NexusAssistant transforms the question into multiple declarative search phrases matching documentation style
+And understands the semantic intent without requiring exact entity names
+And searches specification fragments with each phrase variation, finding matches across different vocabulary
 And returns specific action and purpose statements that describe parsing responsibilities
 And includes parent entity information and referenced entities for complete context
+And shows which search phrase variation matched each result for transparency
 And explains how these fragments and their entities work together to accomplish parsing
 
 scenario: SemanticLayerDiscovery
@@ -294,9 +295,11 @@ And enables further exploration of discovered entities
 scenario: FuzzyConceptMatching
 Given a query with approximate or alternative terminology
 When user asks "What handles file watching?"
-Then @NexusAssistant matches concepts like "file watching" to related entities
-And finds the component that monitors file changes
+Then @NexusAssistant generates multiple search phrases: "file watching handler", "monitors file changes", "file change detection"
+And matches these concepts to related entities using semantic search across all phrase variations
+And finds the component that monitors file changes through best-matching phrase
 And explains the entity's purpose and file watching capability
+And shows which specific phrase variation matched the result
 And shows scenarios demonstrating the file watching behavior
 
 scenario: DiscoverAllEntitiesInCatalog
@@ -338,24 +341,28 @@ And provides context about each entity's responsibilities
 scenario: AccurateContextualFragmentRetrieval
 Given a developer asks "What entities are involved in processing payment transactions?"
 When @NexusAssistant receives this complex contextual question
-Then it thoroughly analyzes the question to extract key concepts: "payment", "transactions", "processing"
-And searches across both @ProductView and @SystemDesignView fragments comprehensively to ensure no relevant statements are missed
+Then it generates multiple declarative search phrases: "entities process payment transactions", "payment transaction processing", "entities involved in payments"
+And thoroughly analyzes each phrase to match against documentation vocabulary
+And searches across both @ProductView and @SystemDesignView fragments with all phrase variations comprehensively to ensure no relevant statements are missed
 And deeply understands individual statement semantics including purposes, properties, and actions to find accurate semantic matches
 And verifies semantic similarity scores meet quality thresholds to avoid false positives
 And identifies specific purpose and action statements in PaymentFlow, PaymentGateway, and related entities
 And returns matched fragments with parent entity information and all referenced entities for complete context
+And includes which search phrase variation matched each result for transparency
 And ranks results by relevance showing most contextually appropriate fragments first with confidence scores
 And returns complete, accurate results optimized for speed where possible without compromising correctness
 
 scenario: DeepSemanticUnderstanding
 Given a product manager asks "Which features help users recover from errors?"
 When @NexusAssistant processes this question
-Then it understands "recover from errors" semantically (not just text matching)
-And analyzes purpose statement fragments to find those describing error handling, validation, recovery flows
-And examines action statement fragments to identify retry, rollback, or recovery operations
+Then it generates search phrases: "features help users recover from errors", "error recovery features", "users recover from errors", "error handling for users"
+And understands "recover from errors" semantically across all phrase variations (not just text matching)
+And analyzes purpose statement fragments with each phrase to find those describing error handling, validation, recovery flows
+And examines action statement fragments with each phrase to identify retry, rollback, or recovery operations
 And considers referenced entities in each fragment to find connected error management capabilities
 And returns specific matching statement fragments from multiple layers showing complete error recovery ecosystem
 And includes parent entity context and all referenced entities for each matched fragment
+And shows which phrase variation produced each match
 And explains how each fragment contributes to error recovery
 
 scenario: CrossLayerContextualSearch
@@ -430,15 +437,6 @@ And identifies which specification truly describes this code's intent
 And explains precisely why this match is correct and why other candidates were rejected
 And provides confidence score for the decision
 And prevents false trace links that would mislead developers
-
-scenario: LearnFromTraceFeedback
-Given users validate, correct, or reject discovered trace links
-When @IntelligentTraceEngine receives this feedback
-Then it uses LLM to understand why the trace was correct or incorrect
-And updates its reasoning patterns to improve future discovery
-And refines confidence scoring based on what makes good traces
-And continuously improves trace quality without manual retraining
-And adapts to project-specific patterns and conventions
 
 scenario: ContextAwareTraceDiscovery
 Given a product requirement describing user authentication flow
@@ -515,9 +513,6 @@ rule: ConfidenceTransparency
 
 rule: ContextualTraceValidation
 LLM reasoning must consider full context including entity purposes, relationships, code behavior, and system architecture - not just isolated similarity scores - when validating trace links
-
-rule: ContinuousTraceLearning
-@IntelligentTraceEngine must learn from user feedback to continuously improve trace discovery accuracy and reduce false positives over time without requiring manual retraining
 
 rule: MultiHopTraceReasoning
 @IntelligentTraceEngine must be capable of following chains of relationships across layers to discover indirect trace links that direct similarity matching cannot find

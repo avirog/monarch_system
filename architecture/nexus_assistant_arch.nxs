@@ -5,7 +5,7 @@ role: platform
 purpose:
     - Single deployable service providing specification parsing and querying
     - Contains @NexusParser, @ValidationEngine, @SpecificationStore, @KnowledgeGraph, @QueryProcessor, @APIGateway, @MCPServer, @CodeParser, and @TraceabilityMatcher
-    - Includes LLM-powered traceability components: @SemanticMatcher, @LLMReasoner, @TraceValidator, @ExplanationGenerator, @FeedbackLearner, @TraceStorage
+    - Includes LLM-powered traceability components: @SemanticMatcher, @LLMReasoner, @TraceValidator, @ExplanationGenerator, @TraceStorage
     - Exposes REST API via @APIGateway and MCP protocol via @MCPServer
     - Discovers implicit traceability between specifications and source code using hybrid embeddings + LLM reasoning
     - Persists trace links to disk avoiding expensive LLM validation on every restart
@@ -136,7 +136,7 @@ actions:
     addFragment: Stores @Fragment with unique fragment_id and updates fragment index
     addRelation: Creates typed edge between entity nodes with relation type (purpose, property, action, rule, scenario, explicit)
     addCodeEntity: Inserts @CodeEntity from parsed source code
-    addTraceLink: Stores @TraceLink discovered by @TraceabilityMatcher
+    add_trace_link: Stores @TraceLink discovered by @TraceabilityMatcher
     getEntity: Returns entity by name
     getFragment: Returns @Fragment by fragment_id
     getFragmentsByEntity: Returns all @Fragment objects belonging to specific entity
@@ -151,56 +151,36 @@ actions:
     getCatalogs: Returns list of all catalogs with entity counts and layer information
     filterEntitiesByRole: Returns entities matching specific role (actor, service, component, etc)
     removeFragmentsByFile: Removes all fragments from entities in specific file (for reindexing)
-    removeCodeEntitiesFromFile: Removes all code entities from a specific file (for reindexing)
+    remove_code_entities_by_file: Removes all code entities from a specific file (for reindexing)
 
 entity: QueryProcessor
 role: component
 purpose:
-    - Interprets developer and AI agent queries with deep understanding of intent and context
-    - Prioritizes accuracy and completeness of results over response speed in all search operations
-    - Searches @KnowledgeGraph comprehensively for relevant fragments and relationships using both exact matching and semantic search
+    - Direct query interface to @KnowledgeGraph without intent parsing
+    - Searches @KnowledgeGraph for relevant fragments using semantic search with LLM-generated query candidates
     - Returns precise matching fragments with complete parent entity context and referenced entities
-    - Optimizes for speed through embedding caching and vector search without compromising result quality
-    - Deeply understands individual statement semantics for accurate contextual matching at fine-grained level
-    - Searches across multiple layers to ensure complete coverage of relevant fragments
-    - Ranks results by semantic relevance with appropriate thresholds to balance precision and recall
     - Handles traceability queries across specifications and code using @TraceLink objects
-    - Supports natural language queries through fragment-based embedding semantic matching
+    - Supports natural language queries through fragment-based embedding semantic matching with query expansion
     - Enables entity discovery and exploration through filtering and browsing
     - Returns query results as JSON with fragment details and entity context
+    - Optimizes for speed through embedding caching while maintaining result quality
 properties:
-    queryLanguage: one of {Natural, Structured}
-    maxResults: Number, maximum results to return after ranking, default 10
-    semanticSearchEnabled: Boolean, enables embedding-based semantic search for natural language queries, default true
-    embeddingService: String, OpenAI API for text-embedding-3-small model, shared with @TraceabilityMatcher
-    semanticThreshold: Number, minimum cosine similarity for semantic query matches tuned to balance precision and recall, default 0.6
-    cache: @EmbeddingCache, shared cache with @TraceabilityMatcher for query embeddings
-    intentParser: LLM, uses OpenAI chat completion for natural language query understanding with structured output, falls back to regex patterns if LLM unavailable
-    llmModel: String, model for query intent parsing, default gpt-4o-mini
-    vectorStore: collection, pre-indexed fragment embeddings from @TraceabilityMatcher enabling fast similarity search at statement level
-    rankingWeights: struct, configurable weights for ranking factors tuned for accuracy (similarity 0.5, richness 0.2, centrality 0.2, layer_match 0.1)
-    parallelSearchEnabled: Boolean, enables concurrent search across multiple layers without compromising completeness, default true
-    queryContextCache: collection, maintains recent query context for iterative refinement
-    minConfidenceScore: Number, minimum composite confidence score for result inclusion ensuring quality, default 0.3
-    exhaustiveSearch: Boolean, when true searches all fragments before filtering ensuring no relevant results missed, default true
+    knowledgeGraph: @KnowledgeGraph, reference to knowledge graph for querying entities and fragments
+    embeddingService: OpenAI, OpenAI client for text-embedding-3-small model and chat completions, shared with @TraceabilityMatcher
+    cache: @EmbeddingCache, shared cache with @TraceabilityMatcher for query and fragment embeddings
+    semanticThreshold: Number, minimum cosine similarity for semantic query matches, default 0.6
+    llmModel: String, model for query expansion using chat completions, default gpt-4o-mini
+    fragmentEmbeddings: collection, loaded fragment embeddings from @TraceabilityMatcher indexed by (fragment_id, layer) tuple
 actions:
-    parseQuery: Extracts intent and entities from user query using @intentParser LLM with regex fallback, returns structured QueryIntent with query_type, entity_names, layer filters, and parameters
-    determineScope: Identifies which specification layers to search based on query context
-    executeQuery: Queries @KnowledgeGraph and returns fragment-based results with entity context
-    semanticSearch: Generates embedding for natural language query and finds semantically similar fragments using cosine similarity at statement level
-    matchQueryIntent: Analyzes query text to understand whether user wants entities, relationships, layer browsing, or traceability
-    rankResults: Scores and orders fragment results by semantic relevance to query with parent entity context
-    traceToCode: Follows @TraceLink objects from specification fragment to implementing code fragments
-    traceToSpec: Follows @TraceLink objects backward from code fragments to specification requirements
-    assessCoverage: Identifies specifications without corresponding code (gaps in implementation)
-    discoverEntities: Lists entities from @KnowledgeGraph filtered by catalog, layer, role, or semantic context
-    exploreEntity: Retrieves detailed entity information including purpose, properties, actions, and relationships from @KnowledgeGraph
-    browseEntityGraph: Navigates entity relationships enabling exploration of system structure and dependencies
-    findRelevantFragments: Rapidly retrieves contextually relevant fragments by generating query embedding, searching @KnowledgeGraph fragment vector store with layer filtering, and matching against individual statement content with parent entity and referenced entity context
-    rankByRelevance: Applies multi-factor ranking algorithm considering cosine similarity score, parent entity metadata richness (number of properties and actions), relationship centrality (in/out-degree in graph), layer match to query context, and returns sorted fragment results with parent entity and referenced entities included
-    crossLayerSearch: Searches multiple layers (product, design, implementation, code) in parallel for matching fragments, retrieves results from each, identifies cross-layer connections via @TraceLink objects, and unifies results showing layer relationships
-    extractQueryConcepts: Analyzes natural language query to extract key concepts, domain terms, and intent signals for enhanced semantic matching
-    loadFragmentEmbeddingsFromTraceability: Loads pre-generated fragment embeddings from @TraceabilityMatcher vector store for semantic search
+    semanticSearch: Generates multiple query candidate embeddings using LLM query expansion, searches fragments with each candidate, deduplicates by keeping highest similarity per fragment, returns enriched results with parent entity and referenced entities data
+    traceToCode: Traces from specification entity to code implementations following @TraceLink objects, returns trace paths with confidence scores and rationales
+    traceToSpec: Traces from code back to specification entities following @TraceLink objects backward, returns trace chains to product requirements
+    getTraceLinks: Retrieves @TraceLink objects with optional filters for entity name, source layer, and target layer
+    assessCoverage: Checks which specification entities have code implementations, reports implemented entities and gaps
+    discoverEntities: Lists entities from @KnowledgeGraph filtered by catalog, layer, role, or semantic context using semantic search
+    exploreEntity: Retrieves detailed entity information including purpose, properties, actions, relationships, and trace links from @KnowledgeGraph
+    browseEntityGraph: Navigates entity relationships enabling exploration of system structure and dependencies up to specified depth
+    loadEmbeddings: Loads pre-generated fragment embeddings from @TraceabilityMatcher vector store for semantic search
     updateFragmentEmbedding: Incrementally updates single fragment embedding during discovery enabling real-time semantic search availability
 
 entity: SpecificationStore
@@ -345,7 +325,6 @@ purpose:
     - Generates human-readable explanations for trace links via @ExplanationGenerator
     - Resolves ambiguities when multiple fragments appear similar using LLM contextual understanding
     - Discovers multi-hop trace paths through relationship chains that direct similarity cannot find
-    - Learns from user feedback through @FeedbackLearner to continuously improve trace quality
     - Persists discovered trace links via @TraceStorage for instant loading on restart
     - Populates shared vectorStore enabling @QueryProcessor to perform rapid semantic queries at fragment level
     - Stores discovered @TraceLink objects with fragment IDs, confidence scores and explanations in @KnowledgeGraph
@@ -356,7 +335,6 @@ properties:
     llmReasoner: @LLMReasoner, validates candidates and discovers non-obvious connections
     traceValidator: @TraceValidator, scores confidence using multiple quality signals
     explanationGenerator: @ExplanationGenerator, creates human-readable rationales for trace links
-    feedbackLearner: @FeedbackLearner, learns from user validation to improve discovery
     traceStorage: @TraceStorage, persists trace links to disk with change detection and version management
     embeddingService: String, OpenAI API for text-embedding-3-small model
     embeddingDimensions: Number, vector size, 1536 for text-embedding-3-small
@@ -365,7 +343,6 @@ properties:
     llmModel: String, LLM for validation and reasoning, default gpt-4o-mini
     cache: @EmbeddingCache, content-based caching to avoid redundant API calls
     vectorStore: collection, stores fragment embeddings indexed by fragment_id and layer
-    feedbackStore: collection, stores user validation history for learning
     contentHashes: collection, tracks fragment content hashes for cache invalidation
 actions:
     generateEmbedding: Calls embedding service to create vector representation of text
@@ -382,7 +359,6 @@ actions:
     createTraceLink: Generates @TraceLink with fragment IDs, confidence score, validation status, and human-readable rationale
     discoverLayerLinks: Discovers links following valid layer transitions using hybrid embedding + LLM approach with enriched fragment context
     discoverAllLinks: Checks @TraceStorage cache validity, loads cached trace links if fragments unchanged, otherwise indexes all specification fragments and generates code fragments, creates embeddings for all fragments, discovers trace links across all layers with LLM validation then saves to cache
-    processFeedback: Records user validation decisions through @FeedbackLearner to improve future discovery
     populateVectorStore: Builds optimized vectorStore index for @QueryProcessor with all fragment embeddings organized by layer and catalog
 
 entity: EmbeddingCache
@@ -507,23 +483,6 @@ actions:
     getValidationCriteria: Returns criteria for validating trace links for specific layer transition
     isValidTransition: Checks if transition between two layers is valid
 
-entity: FeedbackLearner
-role: component
-purpose:
-    - Learns from user feedback to continuously improve trace discovery accuracy
-    - Stores validation decisions and adapts reasoning patterns
-    - Reduces false positives over time without manual retraining
-properties:
-    feedbackStore: collection, stores user validation history with context
-    learningEnabled: Boolean, enables adaptive improvement, default true
-    feedbackWeight: Number, influence of feedback on future decisions, default 0.2
-actions:
-    recordFeedback: Stores user validation decision (correct, incorrect, uncertain) with trace context
-    analyzeFeedback: Identifies patterns in validated vs rejected traces
-    adaptThresholds: Adjusts confidence thresholds based on feedback patterns
-    updateReasoningPatterns: Refines LLM prompts based on what makes good traces
-    generateInsights: Reports on trace quality improvements from learning
-
 entity: TraceStorage
 role: component
 purpose:
@@ -600,21 +559,20 @@ Results provide high-level map of system structure with entry points for further
 
 scenario: AccurateContextualFragmentRetrieval
 User queries "What entities are involved in processing payment transactions?"
-@QueryProcessor calls extractQueryConcepts to identify key terms: "payment", "transactions", "processing".
-@QueryProcessor generates query embedding using embeddingService via @EmbeddingCache (cached if query seen before).
-@QueryProcessor calls findRelevantFragments with exhaustiveSearch=true ensuring all fragments are evaluated.
-Searches pre-indexed vectorStore completely (populated by @TraceabilityMatcher) comparing query against all fragment embeddings.
-Computes cosine similarity for every fragment to ensure no relevant matches are missed.
+@QueryProcessor calls semanticSearch which generates multiple query candidates using LLM: "entities process payment transactions", "payment transaction processing", "entities involved in payments".
+@QueryProcessor generates embeddings for all query candidates using embeddingService via @EmbeddingCache (cached if query seen before).
+Searches pre-indexed fragmentEmbeddings (populated by @TraceabilityMatcher) comparing each candidate embedding against all fragment embeddings.
+Computes cosine similarity for every candidate-fragment pair to ensure no relevant matches are missed.
 Applies semanticThreshold=0.6 to filter candidates, tuned to favor recall over premature filtering.
-@QueryProcessor retrieves all matching fragments from @KnowledgeGraph with parent entities: PaymentFlow, PaymentGateway, PaymentService, TransactionValidator, plus edge cases.
-@QueryProcessor calls rankByRelevance applying multi-factor scoring with accuracy-tuned weights based on parent entity richness and centrality.
-Verifies each result meets minConfidenceScore=0.3 threshold ensuring quality.
-Returns complete, accurate ranked fragments with parent entity context, referenced entities, confidence scores and relevance explanations (typical response time 200-500ms prioritizing correctness).
+Fragments matching any query candidate above threshold are collected, deduplicating by keeping highest similarity per fragment.
+@QueryProcessor retrieves matching fragments from @KnowledgeGraph: PaymentFlow, PaymentGateway, PaymentService, TransactionValidator fragments.
+Sorts fragments by similarity score descending, enriches each with parent entity data and referenced entities data.
+Returns complete, accurate ranked fragments with parent entity context, referenced entities, matched candidate, and similarity scores.
 
 scenario: DeepSemanticUnderstanding
 User asks "Which features help users recover from errors?"
-@QueryProcessor generates embedding for query capturing semantic meaning of "error recovery".
-@QueryProcessor searches vectorStore comparing query embedding against all fragment embeddings.
+@QueryProcessor semanticSearch generates query candidates capturing semantic meaning of "error recovery".
+@QueryProcessor searches fragmentEmbeddings comparing each candidate embedding against all fragment embeddings.
 @QueryProcessor identifies semantic matches at statement level beyond keyword matching:
     - Action fragments with "retry", "rollback", "validation" match "recover from errors" semantically
     - Purpose fragments with "error handling", "resilience" match even without exact term "recover"
@@ -625,42 +583,35 @@ Results include precise matching fragments with parent entities from multiple la
 
 scenario: CompleteCrossLayerSearch
 User queries "What defines and implements user authentication?"
-@QueryProcessor recognizes cross-layer intent from query containing "defines" (product) and "implements" (design/code).
-@QueryProcessor enables parallelSearchEnabled and launches concurrent exhaustive searches:
-    - Thread 1: searches ALL product layer fragments in vectorStore completely
-    - Thread 2: searches ALL design layer fragments in vectorStore completely
-    - Thread 3: searches ALL implementation layer fragments in vectorStore completely
-All searches use same query embedding against layer-filtered vector stores with exhaustiveSearch=true.
-Each thread computes similarity for every fragment in its layer ensuring no relevant fragments missed.
-Product search finds all authentication feature fragments, design search finds all auth component fragments including edge cases.
-@QueryProcessor calls crossLayerSearch to retrieve ALL @TraceLink objects between matched fragments and their parent entities.
-@KnowledgeGraph provides complete trace connections showing product→design→code relationships at fragment level.
-@QueryProcessor unifies results showing Authentication feature fragments trace to AuthService component fragments trace to auth_handler.py code fragments, plus related entities.
-Returns complete cross-layer view with precise fragment matches and parent entity context with traceability (typical 200-600ms prioritizing completeness over speed).
+@QueryProcessor calls semanticSearch multiple times, once per layer to search across layers.
+First call: semanticSearch with layer="product" generates query candidates and finds authentication feature fragments.
+Second call: semanticSearch with layer="design" generates query candidates and finds authentication component fragments.
+Third call: semanticSearch with layer="code" (if enabled) finds authentication code fragments.
+Each search generates query candidates, creates embeddings, searches fragmentEmbeddings for that layer.
+Each search returns fragments with parent entity data and referenced entities.
+User can then call traceToCode or traceToSpec to follow @TraceLink objects between matched entities.
+@KnowledgeGraph provides trace connections showing product→design→code relationships.
+Returns fragments from multiple layers with parent entity context and referenced entities for complete cross-layer understanding.
 
-scenario: IntelligentFragmentRanking
-@QueryProcessor receives multiple matching fragments from semantic search with raw similarity scores.
-@QueryProcessor applies rankByRelevance multi-factor algorithm:
-    1. Semantic similarity score (weight 0.5): cosine similarity from vector search at fragment level
-    2. Parent entity richness (weight 0.2): count of properties + actions in parent entity indicating detail level
-    3. Relationship centrality (weight 0.2): in-degree + out-degree of parent entity from @KnowledgeGraph relations
-    4. Layer match (weight 0.1): bonus if fragment layer matches query context
-For each fragment, @QueryProcessor computes weighted score using parent entity metrics and generates relevance explanation.
-Example: PaymentGateway action fragment scores (0.82 * 0.5) + (12/20 * 0.2) + (8/15 * 0.2) + (1.0 * 0.1) = 0.64 total relevance.
-@QueryProcessor sorts by composite score and formats results with per-fragment explanations including parent entity and referenced entities.
-Results show most contextually relevant fragments first with parent entity context and transparent scoring rationale.
+scenario: SimpleFragmentRanking
+@QueryProcessor semanticSearch receives multiple matching fragments with similarity scores from query candidate matching.
+For fragments matching multiple query candidates, keeps only the highest similarity score per fragment during deduplication.
+@QueryProcessor sorts fragments by similarity score descending (simple ranking by cosine similarity).
+Formats results with parent entity data retrieved from @KnowledgeGraph for each fragment.
+Includes referenced entities data for each fragment showing related specifications.
+Example: PaymentGateway action fragment with similarity 0.82 to "payment transaction processing" candidate ranked higher than fragment with 0.71.
+Results show most semantically similar fragments first with parent entity context, referenced entities, and matched query candidate for transparency.
 
-scenario: AccurateIterativeRefinement
-User performs sequence: "Find payment entities" → explores PaymentGateway → "Show related entities".
-First query: @QueryProcessor generates embedding, exhaustively searches vectorStore ensuring all payment-related fragments found.
-Returns PaymentGateway fragments with parent entity context and all related entity fragments with accurate relevance scores (typical 200-400ms).
-@QueryProcessor stores query context in queryContextCache including query embedding and selected entity for efficiency.
-User explores PaymentGateway: @QueryProcessor retrieves complete entity details from @KnowledgeGraph with all fragments, properties, actions, and relationships.
-Second query "Show related entities": @QueryProcessor detects context from queryContextCache (PaymentGateway).
-@QueryProcessor calls @KnowledgeGraph getRelations("PaymentGateway") retrieving ALL connected entities and their fragments without filtering.
-@QueryProcessor enhances results using cached fragment embeddings from first search to provide relevance scores, no redundant API calls.
-Returns complete relationship graph with precise fragment matches ensuring user sees all relevant connections (typical 50-150ms due to context awareness).
-@EmbeddingCache hit rate improves with repeated explorations enabling efficient iterative discovery without sacrificing completeness.
+scenario: CachedIterativeSearch
+User performs sequence: "Find payment entities" → explores PaymentGateway → "Find payment processors".
+First query: @QueryProcessor semanticSearch generates query candidates and embeddings, searches fragmentEmbeddings for payment-related fragments.
+Returns PaymentGateway fragments with parent entity context and referenced entities.
+@EmbeddingCache stores generated embeddings for reuse across queries.
+User explores PaymentGateway: @QueryProcessor exploreEntity retrieves complete entity details from @KnowledgeGraph with properties, actions, and relationships.
+Second query "Find payment processors": @QueryProcessor semanticSearch generates new query candidates and embeddings.
+@EmbeddingCache returns cached embeddings for any previously seen query phrases, avoiding redundant API calls.
+Fragment embeddings remain loaded in fragmentEmbeddings dict for fast similarity computation.
+@EmbeddingCache hit rate improves with repeated similar queries enabling efficient discovery.
 
 scenario: SpecificationUpdate
 Developer modifies a .nxs file. 
@@ -762,18 +713,6 @@ Rationale generated by @ExplanationGenerator during discovery explains:
 Developer understands traceability rationale and trusts the connection.
 Explanation enables informed decisions about code changes and their impact on requirements.
 
-scenario: LearningFromFeedback
-Developer reviews discovered trace links and validates 20 connections.
-Developer confirms 15 as correct, rejects 3 as false positives, marks 2 as uncertain.
-For each decision, developer provides context through @FeedbackLearner interface.
-@FeedbackLearner stores validated traces with full context in feedbackStore.
-@FeedbackLearner analyzes rejected traces to identify common patterns leading to false positives.
-@FeedbackLearner adjusts embeddingSimilarityThreshold from 0.6 to 0.65 for this project.
-@FeedbackLearner updates LLM validation prompts to emphasize patterns from correct traces.
-Next discovery iteration shows improved precision: fewer false positives, maintained recall.
-@TraceabilityMatcher continuously improves without manual retraining or threshold tuning.
-System adapts to project-specific patterns and terminology over time.
-
 scenario: ForwardTracing
 Developer queries "what code implements PaymentGateway specification?"
 @QueryProcessor identifies PaymentGateway entity in @KnowledgeGraph design layer.
@@ -816,7 +755,7 @@ This path is used when design specifications are detailed enough and no separate
 scenario: CodeChangeReindexing
 Developer modifies payment_service.py file, @SpecificationStore detects change.
 @CodeParser re-parses the modified file into new @CodeEntity objects.
-@KnowledgeGraph removes old code entities from that file using removeCodeEntitiesFromFile.
+@KnowledgeGraph removes old code entities from that file using remove_code_entities_by_file.
 @EmbeddingCache checks content hashes - unchanged functions keep cached embeddings.
 @TraceabilityMatcher regenerates embeddings only for modified functions using @EmbeddingCache.
 @TraceabilityMatcher recomputes @TraceLink objects for changed entities and updates @KnowledgeGraph.
@@ -825,32 +764,34 @@ Queries immediately reflect updated traceability without full system reindex.
 scenario: SemanticNaturalLanguageQuery
 User submits natural language query "What components are responsible for parsing specifications?"
 @QueryProcessor receives query and checks semanticSearchEnabled property.
-@QueryProcessor generates embedding for the query using embeddingService (OpenAI API).
-@EmbeddingCache checks if this exact query was cached, returns cached embedding or generates new.
+@QueryProcessor calls generateQueryCandidates using @llmModel to transform question into declarative search phrases: ["components parse specifications", "specification parsing components", "parsing specifications responsibility", "components responsible for parsing"].
+@QueryProcessor generates embeddings for all query candidates using embeddingService (OpenAI API).
+@EmbeddingCache checks if candidate embeddings were cached, returns cached or generates new.
 @QueryProcessor retrieves all fragment embeddings from @KnowledgeGraph (previously indexed by @TraceabilityMatcher).
-@QueryProcessor computes cosine similarity between query embedding and each fragment embedding.
-Fragments with similarity above semanticThreshold (default 0.6) are collected.
+@QueryProcessor computes cosine similarity between each candidate embedding and each fragment embedding.
+Fragments with similarity above semanticThreshold (default 0.6) to any candidate are collected with highest similarity score kept per fragment.
+@QueryProcessor deduplicates results by fragment ID, keeping maximum similarity across all candidates.
 @QueryProcessor ranks results by similarity score descending using parent entity richness and centrality.
-Results include purpose and action fragments from @NexusParser, @ValidationEngine, @CodeParser with parent entity context and confidence scores.
-@QueryProcessor returns top maxResults (default 10) as JSON with fragment details, parent entity context, referenced entities, and relevance scores.
+Results include purpose and action fragments from @NexusParser, @ValidationEngine, @CodeParser with parent entity data and referenced entities.
+@QueryProcessor returns top maxResults (default 10) as JSON with fragment details, parent entity context, referenced entities, matched candidate, and relevance scores.
 
-scenario: IntentBasedLayerFiltering
+scenario: StructuralLayerFiltering
 User queries "Find all entities in the design layer"
-@QueryProcessor calls matchQueryIntent to parse query structure.
-matchQueryIntent identifies keywords "all entities" and "design layer" indicating browse intent with layer filter.
-@QueryProcessor recognizes this as structured query, not requiring semantic search.
+@QueryProcessor discoverEntities is called with layer="design" filter and no semantic context.
+Since no context is provided, uses structural filtering path instead of semantic search.
 @QueryProcessor calls @KnowledgeGraph getEntities with layer filter "design".
-All 19 design layer entities returned directly without embedding computation.
-Results formatted with entity roles, purposes, and action counts.
+All design layer entities returned directly without embedding computation or query candidate generation.
+Results formatted with entity names, catalogs, roles, and layers for browsing.
 
 scenario: FuzzyConceptMatching
 User asks "What handles file watching?" without knowing exact entity name.
-@QueryProcessor generates embedding for "file watching" concept using embeddingService.
-Query embedding compared against all fragment embeddings in @KnowledgeGraph.
-@SpecificationStore purpose fragment has high semantic similarity containing "watches for file changes".
-@SpecificationStore action fragment "watchFile: Monitors file for changes" also matches strongly.
-Fragments exceed semanticThreshold (0.6), ranked highest due to precise statement-level match.
-@QueryProcessor returns matched fragments with parent entity @SpecificationStore, confidence 0.78, showing exact matched statements plus parent entity properties and actions for complete context.
+@QueryProcessor calls generateQueryCandidates transforming question into: ["file watching handler", "handles file watching", "monitors file changes", "file change detection"].
+@QueryProcessor generates embeddings for all candidates using embeddingService.
+Candidate embeddings compared against all fragment embeddings in @KnowledgeGraph.
+@SpecificationStore purpose fragment has high semantic similarity to "monitors file changes" candidate containing "watches for file changes".
+@SpecificationStore action fragment "watchFile: Monitors file for changes" matches strongly to "file change detection" candidate.
+Fragments exceed semanticThreshold (0.6), ranked highest due to precise statement-level match with multiple candidates.
+@QueryProcessor returns matched fragments with parent entity @SpecificationStore data and referenced entities, confidence 0.82, showing exact matched statements plus matched candidate that triggered each result for transparency.
 
 scenario: SharedEmbeddingInfrastructure
 @QueryProcessor and @TraceabilityMatcher both initialize with same embeddingService (OpenAI API).
@@ -909,20 +850,20 @@ rule: OptimizedSemanticRetrieval
 rule: DeepFragmentUnderstanding
 @TraceabilityMatcher must index fragments at statement level including each purpose statement, property description, action definition, rule statement, and scenario step with parent entity and referenced entity context - @QueryProcessor must match queries against fragment embeddings returning precise statement-level matches with complete entity context
 
-rule: MultiFactorRanking
-@QueryProcessor must rank results using composite scoring algorithm with configurable weights: semantic similarity (default 0.5), entity richness measured by properties+actions count (default 0.2), relationship centrality from graph degree (default 0.2), and layer appropriateness (default 0.1) - each result must include relevance explanation
+rule: SimilarityRanking
+@QueryProcessor must rank semantic search results by cosine similarity score descending - fragments with higher similarity to any query candidate are ranked higher, with deduplication keeping maximum similarity per fragment
 
-rule: CrossLayerCompleteness
-@QueryProcessor must support parallel search across product, design, implementation, and code layers when parallelSearchEnabled is true, using layer-filtered vector stores and unifying results with @TraceLink connections - parallel execution must ensure all layers are searched completely without missing entities
+rule: CrossLayerSearch
+@QueryProcessor enables cross-layer search by calling semanticSearch multiple times with different layer filters - each search is independent and searches all fragments in that layer using query candidate expansion and similarity matching
 
-rule: ContextualCaching
-@QueryProcessor should maintain queryContextCache for recent searches and explorations to improve response times for iterative refinement without compromising accuracy - cache includes query embeddings, selected entities, and relationship graphs eliminating redundant computations
+rule: EmbeddingCaching
+@QueryProcessor uses shared @EmbeddingCache for query candidate embeddings and fragment embeddings - cache stores embeddings by content hash enabling reuse across queries and avoiding redundant API calls for repeated query phrases
 
-rule: VectorStoreOptimization
-@QueryProcessor must reuse vectorStore populated by @TraceabilityMatcher during entity indexing - no separate embedding generation for search, all entity embeddings pre-computed and cached enabling efficient similarity computations
+rule: FragmentEmbeddingReuse
+@QueryProcessor must load fragmentEmbeddings from @TraceabilityMatcher after indexing - no separate embedding generation for search, all fragment embeddings pre-computed and cached enabling efficient similarity computations during semantic search
 
-rule: ExhaustiveSearchDefault
-@QueryProcessor must default to exhaustiveSearch=true ensuring all entities are evaluated during semantic search - early termination optimizations should only be enabled when explicitly configured and must not compromise result completeness
+rule: ComprehensiveFragmentSearch
+@QueryProcessor semanticSearch must search all fragment embeddings comparing each query candidate against all fragments to ensure no relevant matches are missed - deduplication keeps highest similarity per fragment across all candidates
 
 rule: ThresholdTuning
 Similarity thresholds must be tuned to favor recall (finding all relevant entities) while maintaining acceptable precision - missing relevant entities is more harmful than including some less relevant ones that can be filtered through ranking
@@ -944,9 +885,6 @@ rule: MultiHopReasoning
 
 rule: AmbiguityResolution
 When @SemanticMatcher generates multiple candidates with similar embedding scores, @LLMReasoner must analyze full context to disambiguate and select correct connection - prevents false trace links from misleading developers about implementation relationships
-
-rule: ContinuousLearning
-@FeedbackLearner must record all user validation decisions and adapt @TraceabilityMatcher behavior without manual retraining - adjusts thresholds, refines LLM prompts, and learns project-specific patterns to continuously improve trace quality over time
 
 rule: CompositeConfidenceScoring
 @TraceValidator must combine embedding similarity (default weight 0.4) and LLM validation confidence (default weight 0.6) into composite score - LLM reasoning weighted higher because it validates logical correctness while embeddings only measure semantic similarity
