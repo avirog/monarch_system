@@ -16,61 +16,83 @@ purpose:
     - Automatically discovers which code fragments implement which specification fragments using AI analysis
     - Shows developers and product managers how specific requirements connect to actual implementation code
     - Reduces miscommunication between product vision, system design and technical execution
-
-properties:
-    productView: @ProductView, collection of product-level views managed by the assistant
-    systemDesignView: @SystemDesignView, collection of system design views managed by the assistant
-    componentImplementations: @ComponentImplementation, collection of component-level implementations managed by the assistant
-    traceEngine: @IntelligentTraceEngine, intelligent traceability engine combining embeddings and LLM reasoning
-    mcpInterface: @MCPServerInterface, protocol interface for external AI agent access
-
 actions:
-    provideImplementationContext: Generates @ImplementationContext on-demand by synthesizing product requirements and architectural decisions for specific implementation needs
-    analyzeSpecifications: Examines @ProductView and @SystemDesignView to identify gaps, conflicts, or missing details
-    traceRequirement: Uses @IntelligentTraceEngine to trace requirements bidirectionally - from @ProductView through @SystemDesignView to code, or backward from code to product value
+    provideImplementationContext: Generates implementation context on-demand by synthesizing product requirements and architectural decisions for specific implementation needs
+    analyzeSpecifications: Examines product view and system design view to identify gaps, conflicts, or missing details
+    traceRequirement: Traces requirements bidirectionally - from product view through system design view to code, or backward from code to product value
     identifyRelatedEntities: Determines which entities may be affected by changes or are important in a given context
     assessCoverage: Reports which requirements have been implemented, validates trace quality with confidence scores, and highlights gaps needing review
-    manageRequirements: Helps organize, track, and maintain @ProductView for product managers
-    manageSystemDesign: Helps organize, track, and maintain @SystemDesignView for developers
+    manageRequirements: Helps organize, track, and maintain product view for product managers
+    manageSystemDesign: Helps organize, track, and maintain system design view for developers
     validateFeatureReadiness: Checks if new feature specifications are complete and ready for design and implementation
     searchSpecifications: Transforms user questions into multiple declarative search phrases, then semantically finds relevant specification fragments from any layer by matching against individual statements with each phrase, returning precise results with parent entity context, referenced entities, and which search phrase matched
     discoverEntities: Lists and explores entities across catalogs, filtered by layer, role, catalog, or context
     exploreEntity: Provides detailed information about a specific entity including its purpose, properties, actions, and relationships
     browseEntityGraph: Enables navigation through the entity relationship graph to understand system structure and dependencies
-    explainTraceRationale: Provides detailed explanation of why a trace link exists using @IntelligentTraceEngine to generate human-readable justifications
-    resolveAmbiguousTraces: Uses @IntelligentTraceEngine LLM reasoning to clarify which specification truly connects to which code when similarity alone is insufficient
+    explainTraceRationale: Provides detailed explanation of why a trace link exists to generate human-readable justifications
+    resolveAmbiguousTraces: Uses LLM reasoning to clarify which specification truly connects to which code when similarity alone is insufficient
+relations:
+    @ProductView: collection of product-level views managed by the assistant
+    @SystemDesignView: collection of system design views managed by the assistant
+    @ComponentImplementation: collection of component-level implementations managed by the assistant
+    @IntelligentTraceEngine: intelligent traceability engine combining embeddings and LLM reasoning
+    @MCPServerInterface: protocol interface for external AI agent access
+    @ImplementationContext: generates on-demand by synthesizing product requirements and architectural decisions
+
+rules:
+    ContextualAccuracy: NexusAssistant must only provide implementation guidance that is consistent with both product requirements and architectural constraints
+    TraceabilityRequirement: Every implementation recommendation must be traceable back to specific product requirements or architectural decisions
+    RealTimeAnalysis: NexusAssistant must analyze specifications in real-time and provide up-to-date guidance based on the latest versions
+    MultiPerspectiveIntegration: Implementation context must synthesize both product manager perspective (WHAT/WHY) and architect perspective (HOW) into actionable developer guidance
+    ThreeLayerConsistency: Information must remain consistent across ProductView, SystemDesignView, and ComponentImplementation layers
+    LayeredTraceability: Product requirements connect to code through design specifications, never directly - every ProductView requirement traces through corresponding SystemDesignView elements to reach ComponentImplementation and actual code
+    BidirectionalTraceability: The assistant must support tracing both top-down (from product requirements through design to actual code) and bottom-up (from code through design to product value and business justification)
+    CoverageVisibility: Product managers and developers must be able to see which requirements have been implemented and which have gaps
+    RelationalImpactAnalysis: When code or specifications change, NexusAssistant must identify and communicate all related entities that may be affected or whose relationships are important to consider in any context, including implementation, design decisions, product changes, or understanding existing features
+    SemanticSearchCapability: NexusAssistant must support natural language queries that don't require exact entity names - searches must understand user intent, match concepts semantically, and return relevant results based on meaning rather than text matching alone
+    EntityDiscoverability: Users must be able to discover entities without prior knowledge of entity names - NexusAssistant must provide browsing, filtering, and exploration capabilities by catalog, layer, role, and context to enable understanding of the monitored system
+    AccuracyAndCompleteness: NexusAssistant must prioritize accuracy, precision, and completeness over response speed - returning all correct, relevant entities is more important than fast responses - but speed should be optimized where it doesn't compromise quality
+    DeepFragmentUnderstanding: NexusAssistant must analyze and understand the complete semantic meaning of each specification fragment including its statement text, parent entity context, and all referenced entities - enabling precise matching at statement level rather than coarse entity-level matching
+    CrossLayerSearch: NexusAssistant must seamlessly search across ProductView, SystemDesignView, and ComponentImplementation layers simultaneously when questions span multiple perspectives, returning unified results that show connections between layers
+    IntelligentRelevanceRanking: Search results must be ranked by contextual relevance considering semantic similarity, entity richness, relationship centrality, layer appropriateness, and indirect connections - most relevant entities must appear first with clear relevance explanations
+    SemanticPrecision: NexusAssistant must use appropriate similarity thresholds to balance recall (finding all relevant entities) and precision (avoiding irrelevant results) - threshold tuning must prioritize avoiding false positives while maintaining good recall
+    SpecificSearchResultRequirement: NexusAssistant.searchSpecifications must return specific fragments that precisely match the query intent, providing the exact statement, action, property, or rule that answers the question along with parent entity and referenced entity context for complete understanding
+    HybridTraceDiscovery: IntelligentTraceEngine must automatically discover connections between specifications and code without manual tagging by combining embedding-based similarity with LLM reasoning - neither approach alone is sufficient for accurate traceability that users can trust
+    ExplainableTraceLinks: Every discovered trace link must include a human-readable explanation of why the connection exists, generated by IntelligentTraceEngine, so developers understand rationale behind traceability
+    ConfidenceTransparency: IntelligentTraceEngine must provide confidence scores for all trace links so users understand reliability and can focus review on uncertain traces
+    ContextualTraceValidation: LLM reasoning must consider full context including entity purposes, relationships, code behavior, and system architecture - not just isolated similarity scores - when validating trace links
+    MultiHopTraceReasoning: IntelligentTraceEngine must be capable of following chains of relationships across layers to discover indirect trace links that direct similarity matching cannot find
+    TraceAmbiguityResolution: When multiple specifications appear similar to code, IntelligentTraceEngine must use LLM reasoning to disambiguate and identify the correct connection with detailed explanation of why other candidates were rejected
 
 entity: ProductManager
 role: actor
 purpose:
-    - Defines product requirements and creates new features in @ProductView
+    - Defines product requirements and creates new features in ProductView
     - Manages the product vision and user-facing capabilities
     - Needs support to ensure specifications are complete and aligned with existing system
-
-properties:
-    assistant: @NexusAssistant, the assistant service used for requirements management
-
 actions:
-    defineRequirements: Creates and maintains @ProductView for new and existing features
+    defineRequirements: Creates and maintains product view for new and existing features
     createFeature: Specifies new features and user capabilities in product views
-    queryExistingFeatures: Asks @NexusAssistant about existing product capabilities and implementations
+    queryExistingFeatures: Asks assistant about existing product capabilities and implementations
     exploreSystem: Discovers and explores entities to understand existing system structure and capabilities
+relations:
+    @NexusAssistant: the assistant service used for requirements management
+    @ProductView: creates and maintains for new and existing features
 
 entity: Developer
 role: actor
 purpose: 
     - Software engineer who designs system architecture and implements features
-    - Creates and maintains @SystemDesignView to support product needs
+    - Creates and maintains SystemDesignView to support product needs
     - Requires clear, actionable guidance on how to translate product requirements into system design and code
-
-properties:
-    assistant: @NexusAssistant, the assistant service used for system design and implementation guidance
-
 actions:
-    queryAssistant: Asks @NexusAssistant for system design or implementation guidance on specific features or questions
-    designSystem: Creates and maintains @SystemDesignView to support product requirements
+    queryAssistant: Asks assistant for system design or implementation guidance on specific features or questions
+    designSystem: Creates and maintains system design view to support product requirements
     implementFeature: Writes code to implement features based on specifications and guidance received
     exploreSystem: Discovers and explores entities across layers to understand system architecture and dependencies
+relations:
+    @NexusAssistant: the assistant service used for system design and implementation guidance
+    @SystemDesignView: creates and maintains to support product requirements
 
 entity: AIAgent
 role: actor
@@ -78,23 +100,29 @@ purpose:
     - Autonomous assistant that helps manage product requirements, system design, and code implementation
     - Works across all three layers: product, design, and implementation
     - Needs precise context and constraints to generate appropriate artifacts
-
-properties:
-    assistant: @NexusAssistant, the assistant service used for product, design, and implementation guidance
-
 actions:
-    manageProductRequirements: Creates and maintains @ProductView based on user needs and business requirements
-    manageSystemDesign: Creates and maintains @SystemDesignView to support product requirements
-    requestContext: Requests @ImplementationContext from @NexusAssistant for a specific feature
+    manageProductRequirements: Creates and maintains product view based on user needs and business requirements
+    manageSystemDesign: Creates and maintains system design view to support product requirements
+    requestContext: Requests implementation context from assistant for a specific feature
     generateCode: Creates code that meets product and architectural requirements based on provided context
     exploreSystem: Discovers and explores entities to understand system structure before generating specifications or code
+relations:
+    @NexusAssistant: the assistant service used for product, design, and implementation guidance
+    @ProductView: creates and maintains based on user needs and business requirements
+    @SystemDesignView: creates and maintains to support product requirements
+    @ImplementationContext: requests from NexusAssistant for a specific feature
 
 entity: ImplementationContext
 role: component
 purpose:
     - Synthesized guidance that combines product requirements with architectural decisions
     - Provides specific, actionable implementation instructions
-    - Generated by @NexusAssistant for @Developer and @AIAgent consumption
+    - Generated by NexusAssistant for Developer and AIAgent consumption
+
+relations:
+    @NexusAssistant: generated by for Developer and AIAgent consumption
+    @Developer: generated for consumption
+    @AIAgent: generated for consumption
 
 entity: ProductView
 role: component
@@ -103,9 +131,8 @@ purpose:
     - Describes WHAT the system does from customer and business perspective
     - Contains user journeys, business rules, and value propositions
     - Written in Nexus language focusing on WHY features exist
-
-properties:
-    systemDesigns: @SystemDesignView, collection of system designs that realize this product
+relations:
+    @SystemDesignView: collection of system designs that realize this product
 
 entity: SystemDesignView
 role: component
@@ -114,9 +141,8 @@ purpose:
     - Describes HOW the system is organized at high level
     - Contains modules, services, data flows, data struct, schemas, and integration patterns
     - Written in Nexus language focusing on architectural decisions and patterns
-
-properties:
-    componentImplementations: @ComponentImplementation, collection of component implementations that realize this design
+relations:
+    @ComponentImplementation: collection of component implementations that realize this design
 
 entity: ComponentImplementation
 role: component
@@ -138,29 +164,30 @@ purpose:
     - Persists discovered trace links to disk avoiding expensive re-discovery on restart when nothing has changed
     - Detects when any specification or code fragment changes and triggers targeted re-discovery while reusing unchanged fragment embeddings
     - Enriches fragment understanding with parent entity context and referenced entities before comparing them for better trace discovery
-
-properties:
-    embeddingAnalyzer: @SemanticMatcher, provides initial similarity-based candidate matches
-    llmReasoner: @LLMReasoner, validates candidates and discovers non-obvious connections
-    traceValidation: @TraceValidation, confidence scoring and quality assessment
-    explanationGenerator: @ExplanationGenerator, creates human-readable justifications for trace links
-    contextEnricher: @ContextEnricher, gathers complete entity context for accurate understanding
-
 actions:
-    discoverTraces: Uses @embeddingAnalyzer to find candidate matches, then @llmReasoner to validate and discover additional connections
-    validateTraceLink: Applies @llmReasoner to confirm if a candidate trace link is valid given full specification and code context
+    discoverTraces: Uses embedding analyzer to find candidate matches, then LLM reasoner to validate and discover additional connections
+    validateTraceLink: Applies LLM reasoner to confirm if a candidate trace link is valid given full specification and code context
     explainConnection: Generates natural language explanation of why a specification connects to specific code
-    reasonAboutIndirectLinks: Uses @llmReasoner to follow chains of relationships that embeddings miss
+    reasonAboutIndirectLinks: Follows chains of relationships that embeddings miss
     disambiguateMatches: Applies contextual reasoning when multiple similar entities exist to identify correct connections
     assessTraceConfidence: Scores trace link quality using both semantic similarity and logical reasoning
-    enrichContext: Uses @ContextEnricher to gather complete understanding of entities including their relationships and architectural role before matching
+    enrichContext: Gathers complete understanding of entities including their relationships and architectural role before matching
+relations:
+    @SemanticMatcher: provides initial similarity-based candidate matches
+    @LLMReasoner: validates candidates and discovers non-obvious connections
+    @TraceValidation: confidence scoring and quality assessment
+    @ExplanationGenerator: creates human-readable justifications for trace links
+    @ContextEnricher: gathers complete entity context for accurate understanding
 
 entity: SemanticMatcher
 role: component
 purpose:
     - Provides fast embedding-based similarity matching at fragment level as first stage of trace discovery
     - Compares individual statement and code method embeddings for precise matching
-    - Generates candidate trace links between specific fragments for @IntelligentTraceEngine validation
+    - Generates candidate trace links between specific fragments for IntelligentTraceEngine validation
+
+relations:
+    @IntelligentTraceEngine: generates candidate trace links for validation
 
 entity: LLMReasoner
 role: component
@@ -194,18 +221,17 @@ purpose:
 entity: MCPServerInterface
 role: service
 purpose:
-    - Exposes @NexusAssistant capabilities to external AI agents and tools via Model Context Protocol
+    - Exposes NexusAssistant capabilities to external AI agents and tools via Model Context Protocol
     - Enables third-party AI systems to query product specifications and system designs
     - Provides standardized protocol interface for both internal and external agent integration
-    - Allows external tools to request @ImplementationContext and navigate specification layers
-
-properties:
-    exposedOperations: @NexusAssistant, subset of @NexusAssistant actions available through MCP protocol
-
+    - Allows external tools to request implementation context and navigate specification layers
 actions:
     serveMCPRequest: Handles incoming MCP protocol requests from external AI agents
-    exposeContext: Provides @ImplementationContext through MCP interface
+    exposeContext: Provides implementation context through MCP interface
     exposeNavigation: Enables specification layer navigation for external clients
+relations:
+    @NexusAssistant: subset of actions available through MCP protocol
+    @ImplementationContext: provides through MCP interface
 
 scenario: DeveloperSeeksImplementationGuidance
 Given a developer working on a new feature
@@ -450,72 +476,3 @@ And @IntelligentTraceEngine uses this enriched context to understand the require
 And discovers the correct connection to authentication code because enriched context reveals the semantic relationship
 And provides clear explanation to developers showing why the connection makes sense despite different terminology
 And developers trust the discovered trace because the rationale explains the business-to-technical mapping
-
-rule: ContextualAccuracy
-@NexusAssistant must only provide implementation guidance that is consistent with both product requirements and architectural constraints
-
-rule: TraceabilityRequirement
-Every implementation recommendation must be traceable back to specific product requirements or architectural decisions
-
-rule: RealTimeAnalysis
-@NexusAssistant must analyze specifications in real-time and provide up-to-date guidance based on the latest versions
-
-rule: MultiPerspectiveIntegration
-Implementation context must synthesize both product manager perspective (WHAT/WHY) and architect perspective (HOW) into actionable developer guidance
-
-rule: ThreeLayerConsistency
-Information must remain consistent across @ProductView, @SystemDesignView, and @ComponentImplementation layers
-
-rule: LayeredTraceability
-Product requirements connect to code through design specifications, never directly - every @ProductView requirement traces through corresponding @SystemDesignView elements to reach @ComponentImplementation and actual code
-
-rule: BidirectionalTraceability
-The assistant must support tracing both top-down (from product requirements through design to actual code) and bottom-up (from code through design to product value and business justification)
-
-rule: CoverageVisibility
-Product managers and developers must be able to see which requirements have been implemented and which have gaps
-
-rule: RelationalImpactAnalysis
-When code or specifications change, @NexusAssistant must identify and communicate all related entities that may be affected or whose relationships are important to consider in any context, including implementation, design decisions, product changes, or understanding existing features
-
-rule: SemanticSearchCapability
-@NexusAssistant must support natural language queries that don't require exact entity names - searches must understand user intent, match concepts semantically, and return relevant results based on meaning rather than text matching alone
-
-rule: EntityDiscoverability
-Users must be able to discover entities without prior knowledge of entity names - @NexusAssistant must provide browsing, filtering, and exploration capabilities by catalog, layer, role, and context to enable understanding of the monitored system
-
-rule: AccuracyAndCompleteness
-@NexusAssistant must prioritize accuracy, precision, and completeness over response speed - returning all correct, relevant entities is more important than fast responses - but speed should be optimized where it doesn't compromise quality
-
-rule: DeepFragmentUnderstanding
-@NexusAssistant must analyze and understand the complete semantic meaning of each specification fragment including its statement text, parent entity context, and all referenced entities - enabling precise matching at statement level rather than coarse entity-level matching
-
-rule: CrossLayerSearch
-@NexusAssistant must seamlessly search across @ProductView, @SystemDesignView, and @ComponentImplementation layers simultaneously when questions span multiple perspectives, returning unified results that show connections between layers
-
-rule: IntelligentRelevanceRanking
-Search results must be ranked by contextual relevance considering semantic similarity, entity richness, relationship centrality, layer appropriateness, and indirect connections - most relevant entities must appear first with clear relevance explanations
-
-rule: SemanticPrecision
-@NexusAssistant must use appropriate similarity thresholds to balance recall (finding all relevant entities) and precision (avoiding irrelevant results) - threshold tuning must prioritize avoiding false positives while maintaining good recall
-
-rule: SpecificSearchResultRequirement
-@NexusAssistant.searchSpecifications must return specific fragments that precisely match the query intent, providing the exact statement, action, property, or rule that answers the question along with parent entity and referenced entity context for complete understanding
-
-rule: HybridTraceDiscovery
-@IntelligentTraceEngine must automatically discover connections between specifications and code without manual tagging by combining embedding-based similarity with LLM reasoning - neither approach alone is sufficient for accurate traceability that users can trust
-
-rule: ExplainableTraceLinks
-Every discovered trace link must include a human-readable explanation of why the connection exists, generated by @IntelligentTraceEngine, so developers understand rationale behind traceability
-
-rule: ConfidenceTransparency
-@IntelligentTraceEngine must provide confidence scores for all trace links so users understand reliability and can focus review on uncertain traces
-
-rule: ContextualTraceValidation
-LLM reasoning must consider full context including entity purposes, relationships, code behavior, and system architecture - not just isolated similarity scores - when validating trace links
-
-rule: MultiHopTraceReasoning
-@IntelligentTraceEngine must be capable of following chains of relationships across layers to discover indirect trace links that direct similarity matching cannot find
-
-rule: TraceAmbiguityResolution
-When multiple specifications appear similar to code, @IntelligentTraceEngine must use LLM reasoning to disambiguate and identify the correct connection with detailed explanation of why other candidates were rejected
