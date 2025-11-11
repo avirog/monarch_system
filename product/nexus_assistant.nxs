@@ -16,6 +16,7 @@ purpose:
     - Automatically discovers which code fragments implement which specification fragments using AI analysis
     - Shows developers and product managers how specific requirements connect to actual implementation code
     - Reduces miscommunication between product vision, system design and technical execution
+    - Provides simple web-based viewer interface enabling users to explore all capabilities through browser without coding
 actions:
     provideImplementationContext: Generates implementation context on-demand by synthesizing product requirements and architectural decisions for specific implementation needs
     analyzeSpecifications: Examines product view and system design view to identify gaps, conflicts, or missing details
@@ -31,6 +32,7 @@ actions:
     browseEntityGraph: Enables navigation through the entity relationship graph to understand system structure and dependencies
     explainTraceRationale: Provides detailed explanation of why a trace link exists to generate human-readable justifications
     resolveAmbiguousTraces: Uses LLM reasoning to clarify which specification truly connects to which code when similarity alone is insufficient
+    serveWebInterface: Provides browser-based viewer with tabs for graph visualization, semantic search, entity browsing, trace links, and code exploration
 relations:
     @ProductView: NexusAssistant reads, analyzes, and helps manage product specifications stored in this view
     @SystemDesignView: NexusAssistant reads, analyzes, and helps manage system design specifications stored in this view
@@ -38,6 +40,7 @@ relations:
     @IntelligentTraceEngine: NexusAssistant uses this engine to discover and validate trace links between specifications and code
     @MCPServerInterface: NexusAssistant exposes its capabilities to external AI agents through this protocol interface
     @ImplementationContext: generates this context by synthesizing product and system design specifications for developers
+    @WebInterface: NexusAssistant provides browser-based interface for users to access all capabilities visually
 
 rules:
     ContextualAccuracy: NexusAssistant must only provide implementation guidance that is consistent with both product requirements and architectural constraints
@@ -232,6 +235,24 @@ actions:
 relations:
     @NexusAssistant: exposes subset of NexusAssistant capabilities through MCP protocol
     @ImplementationContext: provides implementation context to external clients through MCP interface
+
+entity: WebInterface
+role: component
+purpose:
+    - Simple multi-tab browser interface wrapping all REST API endpoints
+    - Enables users to explore specifications, search semantically, and view traceability without coding or API knowledge
+    - Provides visual access to graph visualization, entity browsing, semantic search, trace links, and code entities
+    - Stupid simple HTML design - just forms and displays around JSON APIs with no complex frameworks
+actions:
+    showGraphVisualization: Displays interactive network graph of entities and relations with filtering by layer and catalog
+    showSemanticSearch: Provides search input and displays fragment results with parent entity context and confidence scores
+    showEntitiesBrowser: Lists specification entities with filtering by layer, catalog, and role
+    showTraceLinksBrowser: Displays discovered trace links with confidence scores, rationales, and validation status
+    showCodeEntitiesBrowser: Lists parsed code entities with file paths, signatures, and docstrings
+    showEntityDetails: Shows complete entity information including purposes, actions, properties, relations, and rules
+    navigateBetweenViews: Enables seamless navigation between tabs following entity relationships and trace links
+relations:
+    @NexusAssistant: provides web-based access to all NexusAssistant capabilities for users
 
 scenario: DeveloperSeeksImplementationGuidance
 Given a developer working on a new feature
