@@ -6,6 +6,7 @@ purpose:
     - Single deployable service providing specification parsing and querying
     - Contains parser, validation engine, specification store, knowledge graph, query processor, API gateway, MCP server, code parser, and traceability matcher
     - Includes LLM-powered traceability components: semantic matcher, LLM reasoner, trace validator, explanation generator, trace storage
+    - Includes LLM-powered entity discoverability: search term generator, LLM cache for efficient caching of LLM results
     - Exposes REST API via gateway and MCP protocol via server
     - Discovers implicit traceability between specifications and source code using hybrid embeddings + LLM reasoning
     - Persists trace links to disk avoiding expensive LLM validation on every restart
@@ -44,7 +45,20 @@ rules:
     CompositeConfidenceScoring: TraceValidator must combine embedding similarity (default weight 0.4) and LLM validation confidence (default weight 0.6) into composite score - LLM reasoning weighted higher because it validates logical correctness while embeddings only measure semantic similarity
     ValidationStatusTracking: TraceLink objects must include validationStatus field indicating whether link is validated (LLM confirmed), candidate (embedding-based only), or rejected (LLM invalidated) - enables different treatment and visualization of trace link confidence levels
     RelationReference: Each Relation that is derived from EntityDefinition explicit relations section must contain source entity as first element and target entity as second element
-    
+    LLMSearchTermGeneration: KnowledgeGraph optionally generates LLM-powered search terms for entities when OpenAI API key is provided - LLMSearchTermGenerator analyzes entity descriptions and generates 3-15 diverse search terms stored as search_term fragments enabling improved semantic discoverability
+    LLMResultCaching: All LLM operations must cache results using LLMCache to avoid redundant API calls - cache uses SHA256 hash of input prompt as key and supports disk persistence with LRU eviction for memory efficiency
+relations:
+    @NexusParser: uses parser to parse .nxs specification files into structured ParsedSpecification objects
+    @ValidationEngine: uses validation engine to validate parsed specifications against Nexus language rules
+    @KnowledgeGraph: uses knowledge graph as central repository for storing entities, relations, fragments, code entities, and trace links
+    @SpecificationStore: uses specification store to load specifications from filesystem and watch for file changes
+    @CodeParser: optionally uses code parser to parse source code repositories into CodeEntity objects
+    @TraceabilityMatcher: optionally uses traceability matcher to discover semantic trace links between specifications and code
+    @QueryProcessor: uses query processor for semantic search, entity discovery, and traceability queries
+    @APIGateway: exposes REST API through gateway providing HTTP endpoints for all query and traceability operations
+    @MCPServer: optionally exposes MCP protocol through server enabling AI agent integration via stdio or HTTP transport
+    @EmbeddingCache: uses embedding cache indirectly through knowledge graph for efficient embedding storage and retrieval
+    @LLMCache: uses LLM cache indirectly through knowledge graph for efficient LLM result caching
 
 entity: ParsedSpecification
 role: struct
@@ -122,7 +136,7 @@ purpose:
     - Fragments are indexed and embedded separately for accurate semantic search
 properties:
     fragmentId: String, unique identifier (e.g., "catalog.Entity.purpose.0.1" or "code.function.signature")
-    fragmentType: one of {role, purpose, property, action, rule, scenario, code_docstring, code_signature, code_body}, type of fragment
+    fragmentType: one of {role, purpose, property, action, rule, scenario, relation, search_term, code_docstring, code_signature, code_body}, type of fragment
     content: String, actual text to embed and search
     parentEntity: String, qualified name of parent entity providing context
     referencedEntities: collection of String, entity names mentioned in this fragment
@@ -146,6 +160,46 @@ relations:
     @ValidationEngine: sends parsed specifications to engine for syntax and semantic validation
     @KnowledgeGraph: populates graph with parsed entities and relations
 
+entity: LLMCache
+role: component
+purpose:
+    - Generic cache for LLM results by input hash to avoid redundant API calls
+    - Implements content-based caching with SHA256 hashing of LLM inputs
+    - Supports LRU eviction and optional disk persistence
+    - Works with any LLM request with text input and JSON-serializable output
+properties:
+    storageType: one of {memory, disk}, cache storage mechanism, default disk
+    maxCacheSize: Number, maximum cached results, default 10000
+    cachePath: String, file path for persistent cache when storageType is disk
+actions:
+    computeInputHash: Generates SHA256 hash of LLM input for cache key
+    get: Returns cached result by input hash
+    store: Stores LLM result in cache
+    getOrGenerate: Returns cached result if input unchanged, generates new one otherwise
+    invalidate: Removes cached result when input changes
+    persist: Writes in-memory cache to disk for persistence across restarts
+    load: Restores cache from disk on initialization
+    clear: Clears all cached entries and resets statistics
+    getStats: Returns cache statistics including hits, misses, evictions, size, and hit rate
+
+entity: LLMSearchTermGenerator
+role: component
+purpose:
+    - Generates semantic search terms for entities using LLM to improve discoverability
+    - Analyzes entity descriptions including purposes, properties, actions, relations
+    - Generates 3-15 diverse search terms based on entity complexity
+    - Uses gpt-4o-mini model for fast and cost-effective generation
+properties:
+    llmModel: String, model for generation, default gpt-4o-mini
+    temperature: Number, LLM temperature for generation, default 0.3
+    maxTokens: Number, token limit for LLM responses, default 300
+actions:
+    generateSearchTerms: Generates search terms for an entity based on its description, returns list of 3-15 search term strings
+    buildSearchTermPrompt: Constructs LLM prompt for search term generation including entity description and guidelines
+    callLLM: Calls OpenAI API to generate search terms using chat completions
+relations:
+    @LLMCache: uses cache for storing and retrieving search term results by prompt hash
+
 entity: KnowledgeGraph
 role: module
 purpose:
@@ -158,12 +212,15 @@ purpose:
     - Provides millisecond-speed lookups and traversals across specifications and code using optimized in-memory indexes
     - Enables rapid entity discovery through efficient filtering by catalog, layer, and role
     - Enables precise fragment-based search returning exact matching statements with full entity context
+    - Optionally generates LLM-powered search terms for entities to improve semantic discoverability
 properties:
     indexingStrategy: InMemory
     enableCrossFileLinks: Boolean, whether to link entities across different specification files, default true
     threeLayerModel: Boolean, maintains ProductView, SystemDesignView, and ComponentImplementation separation, default true
     vectorStore: collection, stores fragment embeddings indexed by fragment_id and layer for semantic similarity search
     embeddingCache: EmbeddingCache, manages embedding caching by content hash to avoid redundant API calls
+    llmCache: LLMCache, manages LLM result caching for search term generation and other LLM operations
+    llmGenerator: LLMSearchTermGenerator, optional generator for entity search terms requiring OpenAI API key
 actions:
     addEntity: Inserts entity node with its properties and actions into graph
     addFragment: Stores Fragment with unique fragment_id and updates fragment index
@@ -195,6 +252,8 @@ relations:
     @CodeEntity: stores parsed code entity objects in graph
     @TraceLink: stores discovered trace link objects in graph
     @EmbeddingCache: uses cache for storing and retrieving embeddings by content hash
+    @LLMCache: uses cache for storing and retrieving LLM-generated search terms by prompt hash
+    @LLMSearchTermGenerator: uses generator to create search term fragments for entities when OpenAI API key available
 
 entity: QueryProcessor
 role: component
