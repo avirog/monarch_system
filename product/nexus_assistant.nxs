@@ -33,6 +33,14 @@ actions:
     explainTraceRationale: Provides detailed explanation of why a trace link exists to generate human-readable justifications
     resolveAmbiguousTraces: Uses LLM reasoning to clarify which specification truly connects to which code when similarity alone is insufficient
     serveWebInterface: Provides browser-based viewer with tabs for graph visualization, semantic search, entity browsing, trace links, and code exploration
+    createSpecification: Creates new Nexus specification file with catalog declaration and initial structure
+    modifySpecification: Updates existing specifications safely with atomic writes and validation
+    addEntityToSpecification: Adds well-formed entity to existing specification file
+    generateImplementationCode: Generates complete code implementation from assembled context across product, design, and implementation layers
+    generateTestCode: Generates comprehensive test code for implementations
+    validateArtifacts: Validates specifications for syntax and semantics, and code for correctness against specifications
+    assessSpecificationCompleteness: Checks if specifications have all required elements for implementation
+    orchestrateAgentWorkflow: Executes multi-step AI agent workflows with full tool access including file operations, git, and shell commands
 relations:
     @ProductView: NexusAssistant reads, analyzes, and helps manage product specifications stored in this view
     @SystemDesignView: NexusAssistant reads, analyzes, and helps manage system design specifications stored in this view

@@ -59,6 +59,11 @@ relations:
     @MCPServer: optionally exposes MCP protocol through server enabling AI agent integration via stdio or HTTP transport
     @EmbeddingCache: uses embedding cache indirectly through knowledge graph for efficient embedding storage and retrieval
     @LLMCache: uses LLM cache indirectly through knowledge graph for efficient LLM result caching
+    @AgentOrchestrator: optionally uses agent orchestrator for AI-powered specification and code generation when OpenAI API key provided
+    @ContextAssembler: uses context assembler to synthesize implementation context across layers
+    @SpecificationModifier: uses specification modifier to create and modify .nxs files
+    @CodeGenerator: uses code generator to produce code from specifications
+    @ArtifactValidator: uses artifact validator to validate specifications and code
 
 entity: ParsedSpecification
 role: struct
@@ -663,6 +668,96 @@ relations:
     @KnowledgeGraph: browses entities, relations, traces via /entities, /relations, /trace endpoints
     @TraceabilityMatcher: views trace links via /traceability/links endpoint
     @CodeParser: views code entities via /code/entities endpoint
+
+entity: AgentOrchestrator
+role: component
+purpose:
+    - Orchestrates AI agent task execution using LangGraph framework
+    - Provides agents with comprehensive tools for file operations, git, shell, specifications, and code generation
+    - Manages stateful agent workflows with ReAct pattern reasoning
+properties:
+    framework: String, LangGraph for stateful agent execution
+    llmModel: String, model for agent reasoning, default gpt-4o
+    toolRegistry: collection, all available tools for agent use
+actions:
+    executeTask: Runs agent task with LangGraph using all available tools
+    registerTool: Adds custom tool to agent toolkit
+    getAvailableTools: Returns list of tools agent can use
+relations:
+    @ContextAssembler: uses assembler to provide context tool
+    @SpecificationModifier: uses modifier to provide spec creation and modification tools
+    @CodeGenerator: uses generator to provide code generation tool
+    @ArtifactValidator: uses validator to provide validation tools
+    @MCPServer: exposes agent capabilities through MCP execute_agent_task tool
+
+entity: ContextAssembler
+role: component
+purpose:
+    - Synthesizes implementation context from product, design, and implementation layers
+    - Traces entity relationships across layers to gather complete context
+    - Formats context for LLM consumption in code generation
+properties:
+    maxContextEntities: Number, maximum related entities to include, default 20
+actions:
+    assembleImplementationContext: Traces product→design→impl for entity
+    assembleFeatureContext: Gathers all entities related to feature
+    formatContextForLLM: Structures context for code generation prompts
+relations:
+    @KnowledgeGraph: queries graph for entities and relationships
+    @ContextEnricher: uses enricher to gather detailed entity context
+
+entity: SpecificationModifier
+role: component
+purpose:
+    - Creates new Nexus specification files with proper syntax
+    - Modifies existing specifications safely with atomic writes
+    - Adds entities, scenarios, and other elements to catalogs
+properties:
+    atomicWrites: Boolean, ensures file integrity with locking, default true
+    validateBeforeWrite: Boolean, validates before writing, default true
+actions:
+    createSpecification: Creates new .nxs file with catalog declaration
+    addEntity: Appends entity to specification file atomically
+    updateEntity: Modifies existing entity in place
+    addScenario: Adds scenario to specification
+relations:
+    @NexusParser: uses parser to validate modified specifications
+    @ValidationEngine: validates changes before writing
+
+entity: CodeGenerator
+role: component
+purpose:
+    - Generates code from implementation context using LLM
+    - Produces language-specific implementations following patterns
+    - Includes documentation and follows architectural constraints
+properties:
+    llmModel: String, model for generation, default gpt-4o
+    temperature: Number, generation temperature, default 0.2
+    maxTokens: Number, token limit, default 2000
+actions:
+    generateCodeFromContext: Creates code from assembled context
+    generateTests: Generates test code for implementation
+    explainCode: Generates documentation for code
+relations:
+    @LLMCache: uses cache for code generation results
+    @ContextAssembler: receives implementation context from assembler
+
+entity: ArtifactValidator
+role: component
+purpose:
+    - Validates Nexus specifications for correctness and completeness
+    - Checks generated code against specifications semantically
+    - Assesses if artifacts are ready for implementation
+properties:
+    strictMode: Boolean, enforce strict validation, default true
+actions:
+    validateSpecification: Validates .nxs file syntax and semantics
+    assessCompleteness: Checks if entity has all required elements
+    validateCodeStructure: Validates code syntax with AST parsing
+    validateCodeAgainstSpec: LLM validates code matches spec intent
+relations:
+    @ValidationEngine: uses engine for spec validation
+    @LLMReasoner: uses reasoner for semantic code validation
 
 
 scenario: DiscoverEntitiesInCatalog
