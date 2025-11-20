@@ -60,6 +60,7 @@ relations:
     @EmbeddingCache: uses embedding cache indirectly through knowledge graph for efficient embedding storage and retrieval
     @LLMCache: uses LLM cache indirectly through knowledge graph for efficient LLM result caching
     @AgentOrchestrator: optionally uses agent orchestrator for AI-powered specification and code generation when OpenAI API key provided
+    @AgentLogStore: stores agent execution logs through orchestrator for debugging via web UI
     @ContextAssembler: uses context assembler to synthesize implementation context across layers
     @SpecificationModifier: uses specification modifier to create and modify .nxs files
     @CodeGenerator: uses code generator to produce code from specifications
@@ -309,18 +310,21 @@ purpose:
     - Exposes REST API for external integrations with all query and traceability operations
     - Routes requests to query processor, knowledge graph, and service orchestration
     - Serves HTML web viewer interface wrapping all REST endpoints in visual tabs
+    - Provides agent log viewer UI and REST endpoints for execution debugging
 properties:
     authenticationRequired: Boolean, default false
-    endpoints: collection, /query, /entities, /relations, /trace, /code/entities, /traceability/links, /graph/data, /graph/view, /health
+    endpoints: collection, /query, /entities, /relations, /trace, /code/entities, /traceability/links, /graph/data, /graph/view, /health, /agent/logs, /agent/viewer
 actions:
     handleRequest: Processes incoming API request
     routeToService: Forwards to appropriate service component
     formatResponse: Standardizes JSON responses
     serveWebViewer: Serves HTML interface with multiple tabs wrapping all API endpoints
+    serveAgentLogViewer: Serves local agent execution log viewer UI with auto-refresh
 relations:
     @QueryProcessor: routes semantic search and query requests to processor
     @KnowledgeGraph: exposes graph data through entity, relation, and trace endpoints
     @WebViewer: serves multi-tab HTML viewer and provides JSON data through REST endpoints
+    @AgentLogStore: exposes agent logs through REST endpoints and web UI
 
 entity: MCPServer
 role: component
@@ -675,12 +679,14 @@ purpose:
     - Orchestrates AI agent task execution using LangGraph framework
     - Provides agents with comprehensive tools for file operations, git, shell, specifications, and code generation
     - Manages stateful agent workflows with ReAct pattern reasoning
+    - Logs all executions with timing and message flow for debugging through web UI
 properties:
     framework: String, LangGraph for stateful agent execution
     llmModel: String, model for agent reasoning, default gpt-4o
     toolRegistry: collection, all available tools for agent use
+    logStore: AgentLogStore, stores execution logs for web UI access
 actions:
-    executeTask: Runs agent task with LangGraph using all available tools
+    executeTask: Runs agent task with LangGraph using all available tools and logs execution with duration and message flow
     registerTool: Adds custom tool to agent toolkit
     getAvailableTools: Returns list of tools agent can use
 relations:
@@ -689,6 +695,7 @@ relations:
     @CodeGenerator: uses generator to provide code generation tool
     @ArtifactValidator: uses validator to provide validation tools
     @MCPServer: exposes agent capabilities through MCP execute_agent_task tool
+    @AgentLogStore: stores execution logs for debugging and web UI viewing
 
 entity: ContextAssembler
 role: component
@@ -758,6 +765,26 @@ actions:
 relations:
     @ValidationEngine: uses engine for spec validation
     @LLMReasoner: uses reasoner for semantic code validation
+
+entity: AgentLogStore
+role: component
+purpose:
+    - Stores agent execution logs locally for web UI debugging
+    - Persists task descriptions, success status, message flows, and duration metrics
+    - Enables real-time monitoring of agent workflows without external services
+    - Provides statistics on execution success rates and performance
+properties:
+    logDirectory: String, directory for log storage, default .nexus_cache/agent_logs
+    currentLogFile: String, JSONL file storing execution entries
+    storageFormat: String, JSON Lines for efficient append and read operations
+actions:
+    logExecution: Stores agent task execution with metadata, messages, duration, and result
+    getRecentExecutions: Retrieves recent executions for web UI display
+    getExecutionDetails: Fetches full execution log by timestamp
+    getStatistics: Computes success rates and execution counts
+    clearLogs: Removes all stored logs
+relations:
+    @AgentOrchestrator: receives execution logs from orchestrator after each task
 
 
 scenario: DiscoverEntitiesInCatalog
@@ -1117,3 +1144,22 @@ Display shows trace links from PaymentGateway design entity to payment_service.p
 User clicks on code entity link.
 @WebViewer switches to "Code Entities" view showing payment_service.py functions via /code/entities?file_path=payment_service.py.
 Simple navigation between all views wrapping clean REST API calls.
+
+scenario: AgentExecutionDebugging
+Developer triggers agent task through @MCPServer or @APIGateway.
+@AgentOrchestrator executes task using LangGraph with all available tools.
+@AgentOrchestrator logs execution start with task description and parameters.
+Agent performs multiple steps: tool calls, LLM reasoning, file operations.
+@AgentOrchestrator tracks each message in execution flow with role and content.
+@AgentOrchestrator measures execution duration from start to completion.
+On completion or failure, @AgentOrchestrator stores execution log in @AgentLogStore.
+@AgentLogStore persists log entry with timestamp, task, success status, result, error, messages, duration, and metadata.
+Developer opens browser to /agent/viewer endpoint served by @APIGateway.
+@APIGateway loads agent log viewer UI showing recent executions with statistics.
+UI displays total executions, success count, failure count, and success rate from @AgentLogStore.
+Developer sees list of recent tasks with timestamps, durations, and success indicators.
+Developer clicks on specific execution to expand detailed view.
+UI shows complete message flow with user inputs, AI responses, and tool calls.
+Developer filters by success/failure status to focus on problematic executions.
+UI auto-refreshes every 5 seconds fetching latest logs from @AgentLogStore.
+All debugging happens locally without external services or signup requirements.
